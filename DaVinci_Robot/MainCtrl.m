@@ -129,7 +129,7 @@ D_full = zeros(p, p);
 sys_full = ss(A_full, B_full, C_full, D_full);
 
 %% =====================================================================
-%  8) VERIFICACOES RAPIDAS
+%  VERIFICACOES RAPIDAS
 %  =====================================================================
 fprintf('\n--- Polos em malha fechada ---\n');
 fprintf('LQR              : '); disp(eig(A - B*F_lqr).');
@@ -139,3 +139,116 @@ fprintf('Observador LQR   : '); disp(eig(A - L_lqr*C).');
 fprintf('Integ. LQR (aum) : '); disp(eig(Ae - Be*Fe_lqr).');
 fprintf('Integ. PP  (aum) : '); disp(eig(Ae - Be*Fe_pp).');
 fprintf('Sistema completo : '); disp(eig(A_full).');
+
+
+%% =====================================================================
+%  8) SEGUIDOR LQ COM PRÉ-ALIMENTAÇÃO (Módulo 8 - Seção 1)
+%  Lei de controle: u(t) = K*e(t) + R^{-1}*B'*(eta - P*xr)
+%  onde e(t) = xr(t) - x(t)  e  K = R^{-1}*B'*P  (mesmo K do LQR)
+%  eta satisfaz: d(eta)/dt = -(A - B*K)'*eta - Q*xr,  eta(t1) = Q1*xr(t1)
+%  =====================================================================
+%  Reutiliza F_lqr e as matrizes Q_lqr, R_lqr do item 1.
+%  Implementação: integração BACKWARD de eta, depois FORWARD de x.
+
+Q_seg   = Q_lqr;          % mesma ponderação de estados
+Q1_seg  = Q_lqr;          % penalização terminal (pode ajustar)
+R_seg   = R_lqr;          % mesma ponderação de entradas
+
+% --- Ganho do seguidor (MESMO K do regulador LQR) ---
+[F_seg, P_seg, ~] = lqr(A, B, Q_seg, R_seg);
+% F_seg == F_lqr  (confirmação)
+
+% --- Horizonte de simulação ---
+t1   = 10;                         % tempo final [s]
+dt   = 1e-3;                       % passo de integração [s]
+t_fw = 0 : dt : t1;                % vetor de tempo forward
+N_t  = length(t_fw);
+
+% --- Referência: degrau unitário em todos os n estados ---
+%     Ajuste xr_func conforme o sinal de referência desejado
+xr_func = @(t) ones(n, 1);        % referência constante (degrau)
+
+% --- Integração BACKWARD de eta ---
+%  d(eta)/dt = -(A - B*F_seg)'*eta - Q_seg*xr,  eta(t1) = Q1_seg*xr(t1)
+A_cl_seg = A - B * F_seg;
+eta      = zeros(n, N_t);
+eta(:, end) = Q1_seg * xr_func(t1);
+
+for k = N_t-1 : -1 : 1
+    t_k       = t_fw(k+1);
+    xr_k      = xr_func(t_k);
+    deta      = -A_cl_seg' * eta(:, k+1) - Q_seg * xr_k;
+    eta(:, k) = eta(:, k+1) - dt * deta;   % Euler backward
+end
+
+% --- Integração FORWARD de x ---
+%  dx/dt = A*x + B*u,  u = K*e + R^{-1}*B'*(eta - P*xr)
+x_seg = zeros(n, N_t);
+u_seg = zeros(m, N_t);
+x_seg(:, 1) = zeros(n, 1);        % condição inicial (ajuste se necessário)
+
+for k = 1 : N_t-1
+    xr_k      = xr_func(t_fw(k));
+    e_k       = xr_k - x_seg(:, k);
+    ff_k      = R_seg \ (B' * (eta(:, k) - P_seg * xr_k));  % pré-alimentação
+    u_seg(:,k) = F_seg * e_k + ff_k;
+    dx        = A * x_seg(:, k) + B * u_seg(:, k);
+    x_seg(:, k+1) = x_seg(:, k) + dt * dx;
+end
+u_seg(:, end) = u_seg(:, end-1);  % repete último ponto
+
+fprintf('\n--- Seguidor LQ (Módulo 8 - Seção 1) ---\n');
+fprintf('Polos malha fechada seguidor : ');
+disp(eig(A_cl_seg).');
+
+%% =====================================================================
+%  9) SEGUIDOR COM MODELO DE VARIÁVEIS EXÓGENAS (Módulo 8 - Seção 2)
+%  Referência: dxr/dt = Ar*xr  |  perturbação: dw/dt = Aw*w
+%  Lei de controle: u = K*e - N*F_exo*xo
+%    com F_exo = [A - Ar, E],  xo = [xr; w]
+%    e   N = inv(M * inv(A) * B) * M * inv(A),  M escolhida pelo usuário
+%  =====================================================================
+%  Parâmetros do modelo exógeno — ajuste conforme o seu sistema.
+%  Aqui: referência constante (Ar = 0) e sem perturbação modelada.
+
+Ar  = zeros(n, n);             % modelo da referência (0 → degrau)
+E   = zeros(n, m);             % matriz de entrada da perturbação
+Aw  = zeros(m, m);             % modelo da perturbação (0 → constante)
+
+% Variável exógena aumentada: xo = [xr; w]
+r_xo = n + m;                  % dimensão de xo
+
+% Matriz F_exo: agrupa (A - Ar) e E
+F_exo = [A - Ar, E];           % n × (n + m)
+
+% Escolha de M: para seguir saídas medidas, use M = C.
+%   M deve ser r×n com r = número de referências rastreáveis (r ≤ m).
+%   Como m = 3 e p = 2, usamos as p primeiras linhas de C.
+M = C;                         % p × n  (ajuste se quiser rastrear outros sinais)
+
+% Ganho de pré-alimentação N = inv(M*inv(A)*B) * M*inv(A)
+MiAB = M * (A \ B);            % p × m
+if rank(MiAB) < size(MiAB, 1)
+    warning(['M*inv(A)*B nao e invertivel. ' ...
+             'Nao e possivel rastrear todos os sinais de referencia com os atuadores disponiveis.']);
+    N_ff = pinv(MiAB) * M / A; % pseudo-inversa como fallback
+else
+    N_ff = MiAB \ (M / A);     % p × n
+end
+
+% Lei de controle: u = K*e - N_ff * F_exo * xo
+% Reutiliza F_lqr como ganho de realimentação K
+K_exo = F_lqr;                 % 3 × n
+
+fprintf('\n--- Seguidor c/ variáveis exógenas (Módulo 8 - Seção 2) ---\n');
+fprintf('Dimensão de N_ff        : %d × %d\n', size(N_ff));
+fprintf('Dimensão de F_exo       : %d × %d\n', size(F_exo));
+fprintf('Polos malha fechada     : ');
+disp(eig(A - B * K_exo).');
+
+% Verificação do erro em regime permanente
+%   e_inf = inv(A) * (F_exo - B*N_ff*F_exo) * xo_inf
+%   Para xo constante (Ar=0, Aw=0), xo_inf = [xr_inf; w_inf]
+fprintf('Verificando cancelamento do erro em regime permanente...\n');
+residuo = M / A * (F_exo - B * N_ff * F_exo);
+fprintf('||M*inv(A)*(F_exo - B*N*F_exo)|| = %.2e  (esperado ~0)\n', norm(residuo));
