@@ -1,4 +1,4 @@
-function [A, B, C, D] = LinModel(f_ss, x_ss, u_ss, G)
+function [A, B, C, D, E] = LinModel(f_ss, x_ss, u_ss, w_ss, G, n)
 % linearizeModel Linearizes the nonlinear state-space model f(x,u)
 %                and h(x,u) around a defined operating point.
 %
@@ -6,10 +6,11 @@ function [A, B, C, D] = LinModel(f_ss, x_ss, u_ss, G)
 %   f_ss  - Symbolic state function f(x,u) [6x1]
 %   x_ss  - Symbolic state vector x [6x1]
 %   u_ss  - Symbolic input vector u [3x1]
+%   w_ss - Symbolic perturbation scalar w [1x1]
 %   g_mat - Symbolic gravity vector G(q) [3x1]
 %
 % Outputs:
-%   A, B, C, D - The four symbolic linearized state-space matrices
+%   A, B, C, D, E - The symbolic linearized state-space matrices
 
 
 % Output equation y = h(x,u)
@@ -42,16 +43,20 @@ C_sym = jacobian(h_ss, x_ss); % C = d(h)/d(x)
 
 D_sym = jacobian(h_ss, u_ss); % D = d(h)/d(u)
 
+E_sym = jacobian(f_ss, w_ss);
+
 % 4. Evaluate Jacobians at the Equilibrium Point
-A = subs(A_sym, [x_ss; u_ss], [x_bar; u_bar]);
-B = subs(B_sym, [x_ss; u_ss], [x_bar; u_bar]);
-C = subs(C_sym, [x_ss; u_ss], [x_bar; u_bar]);
-D = subs(D_sym, [x_ss; u_ss], [x_bar; u_bar]);
+A = subs(A_sym, [x_ss; u_ss; w_ss], [x_bar; u_bar; 0]);
+B = subs(B_sym, [x_ss; u_ss; w_ss], [x_bar; u_bar; 0]);
+C = subs(C_sym, [x_ss; u_ss; w_ss], [x_bar; u_bar; 0]);
+D = subs(D_sym, [x_ss; u_ss; w_ss], [x_bar; u_bar; 0]);
+E = subs(E_sym, [x_ss; u_ss; w_ss], [x_bar; u_bar; 0]);
 
 % 5. Simplify and finalize
 A = simplify(A);
 B = simplify(B);
 C = simplify(C);
 D = simplify(D); 
+E = simplify(E);
 
 end

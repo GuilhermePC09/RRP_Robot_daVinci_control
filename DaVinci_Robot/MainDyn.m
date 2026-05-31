@@ -40,33 +40,40 @@ syms K_env3 real
 K_env_matrix = diag([0, 0, K_env3]);
 
 syms q3_bar real
-q_bar_spring = [0; 0; q3_bar];
+q_bar_env = [0; 0; q3_bar];
 
-tau_spring = K_env_matrix * (q_sym - q_bar_spring);
+% Adding pysiological perturbation
+syms w real
+w_env = [0; 0; w];
+
+tau_env = K_env_matrix * (q_sym - (q_bar_env + w_env));
+
 
 % New n = phi + G + tau_b + tau_spring
-n = n + tau_friction + tau_spring;
+n = n + tau_friction + tau_env;
 
 % disp('Total n vector (phi + G + Bv*dq + tau_ext):');
 % pretty(n)
 
-[f_ss, x_ss, u_ss] = StateSpaceFunc(B, n);
+[f_ss, x_ss, u_ss, w_ss] = StateSpaceFunc(B, n);
 
 % disp('State Vector (x):');
 % pretty(x_ss)
 % disp('Input Vector (u):');
 % pretty(u_ss)
+% disp('Perturbation Variable (w):');
+% pretty(w_ss)
 % disp('State Function f(x,u) = x_dot:');
 % pretty(f_ss)
 
 % Torque needed to mantain equilibrium
-tau_eq = subs(n, [q_sym; dq_sym], [0; 0; q3_bar; 0; 0; 0]);
-disp(tau_eq);
+% tau_eq = subs(n, [q_sym; dq_sym], [0; 0; q3_bar; 0; 0; 0]);
+% disp(tau_eq);
 
 
 %% ----- Linearizarion (Taylor expansion) -----
 
-[A_lin, B_lin, C_lin, D_lin] = LinModel(f_ss, x_ss, u_ss, G);
+[A_lin, B_lin, C_lin, D_lin, E_lin] = LinModel(f_ss, x_ss, u_ss, w_ss, G);
 
 % disp('Linearized State Matrix A:');
 % pretty(A_lin)
@@ -76,19 +83,24 @@ disp(tau_eq);
 % pretty(C_lin)
 % disp('Linearized Feedthrough Matrix D:');
 % pretty(D_lin)
+% disp('Linearized Perturbation Matrix E:');
+% pretty(E_lin)
 
 
 %% ----- Numeric parameters substitution -----
 
-[A_num, B_num, C_num, D_num, sym_list, num_list] = NumSS(A_lin, B_lin, C_lin, D_lin);
+[A_num, B_num, C_num, D_num, E_num, sym_list, num_list] = NumSS(A_lin, B_lin, C_lin, D_lin, E_lin);
 
 disp('--- Numeric Matrices (6x6) ---');
 disp('Numeric State Matrix A:');
 disp(A_num);
 disp('Numeric Input Matrix B:');
 disp(B_num);
+disp('Numeric Perturbation Matrix E:');
+disp(E_num);
 
 disp(eig(A_num));
+
 
 %% ----- Reduced system -----
 
