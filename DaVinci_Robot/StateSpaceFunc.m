@@ -1,4 +1,4 @@
-function [f, x, u] = StateSpaceFunc(B, n)
+function [f, x, u, w] = StateSpaceFunc(B, n)
 % StateSpaceModel Generates the symbolic nonlinear state-space model f(x,u).
 %
 % Inputs:
@@ -6,10 +6,10 @@ function [f, x, u] = StateSpaceFunc(B, n)
 %   n - Symbolic vector C(q,dq)dq + G(q)
 %
 % Outputs:
-%   f - The symbolic state function vector f(x, u) [6x1]
+%   f - The symbolic state function vector f(x, u, w) [6x1]
 %   x - The symbolic state vector x [6x1]
 %   u - The symbolic input vector u [3x1]
-%
+%   w - The symbolic perturbation scalar w [1x1]
 
 n_joints = size(B, 1);
 
@@ -22,6 +22,7 @@ vars_dq = [dq1; dq2; dq3];
 % Define the state (x) and input (u) vectors
 x = sym('x', [2 * n_joints, 1], 'real'); % [x1..x6]
 u = sym('u', [n_joints, 1], 'real');   % [u1..u3]
+syms w real
 
 % Map the states to the (q, dq) variables
 x_q = x(1:n_joints);
