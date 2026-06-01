@@ -97,13 +97,13 @@ disp(A_num);
 disp('Numeric Input Matrix B:');
 disp(B_num);
 disp('Numeric Output Matrix C:');
-disp(B_num);
+disp(C_num);
 disp('Numeric Feedthrough Matrix D:');
-disp(B_num);
+disp(D_num);
 disp('Numeric Perturbation Matrix E:');
 disp(E_num);
 
-disp(eig(A_num));
+% disp(eig(A_num));
 
 
 %% ----- Reduced system -----
