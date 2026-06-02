@@ -103,7 +103,7 @@ disp(D_num);
 disp('Numeric Perturbation Matrix E:');
 disp(E_num);
 
-% disp(eig(A_num));
+disp(eig(A_num));
 
 
 %% ----- Reduced system -----
@@ -120,6 +120,9 @@ B_reduced = B_num(states_of_interest_idx, :);
 output_of_interest_idx = [2, 3];
 C_reduced = C_num(output_of_interest_idx, states_of_interest_idx);
 D_reduced = D_num(output_of_interest_idx, :);
+
+% Reduced E matrix
+E_reduced = E_num(states_of_interest_idx, :);
 
 disp('--- Reduced Matrices (5x5) ---');
 disp('Reduced State Matrix A (5x5):');

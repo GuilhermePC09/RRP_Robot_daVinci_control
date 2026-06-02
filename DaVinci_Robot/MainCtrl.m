@@ -1,26 +1,168 @@
+% LIMPEZA 
 clc;
-%% Sistema reduzido
+
+
+%% =====================================================================
+%  0) ANÁLSIE DO SISTEMA
+%  =====================================================================
+
+% Sistema reduzido
 A = A_reduced;
 B = B_reduced;
 C = C_reduced;
 D = D_reduced;
+E = E_reduced;
 
 n = size(A, 1);     % numero de estados
 m = size(B, 2);     % numero de entradas
 p = size(C, 1);     % numero de saidas
 
-ControlAnalysis(A, B, C, D, sys_reduced);
+ControlAnalysis(A, B, C, D);
 
 %% =====================================================================
 %  1) CONTROLE POR LQR
 %  =====================================================================
-Q_lqr = eye(n);
-R_lqr = eye(m);
 
-F_lqr = lqr(A, B, Q_lqr, R_lqr);
-G_lqr = inv(-C * inv(A - B*F_lqr) * B);
+% --- Definição dos limites máximos toleráveis (Abordagem de Bryson) ---
+err_q2_max = 0.001;  % 0.001 rad de erro tolerável
+err_q3_max = 0.001;  % 0.001 m (1 mm) de erro tolerável
 
-sys_lqr_bf = ss(A - B*F_lqr, B*G_lqr, C, zeros(p, m));
+err_dq1_max = 0.1;   % 0.1 rad/s tolerável
+err_dq2_max = 0.1;   % 0.1 rad/s tolerável
+err_dq3_max = 0.1;   % 0.1 m/s tolerável
+
+% Matriz Q (5x5 para o sistema reduzido)
+Q_lqr = diag([1/err_q2_max^2, 1/err_q3_max^2, ...
+              1/err_dq1_max^2, 1/err_dq2_max^2, 1/err_dq3_max^2]);
+
+% --- Definição do esforço dos atuadores (Capacidade dos Motores) ---
+tau1_max = 15;  % Exemplo: Motor aguenta 10 Nm
+tau2_max = 37;  % Exemplo: Motor aguenta 10 Nm
+f3_max   = 424;  % Exemplo: Motor linear aguenta 50 N
+
+% Matriz R (3x3 para os 3 atuadores)
+% R_lqr = diag([1/tau1_max^2, 1/tau2_max^2, 1/f3_max^2]);
+R_lqr = diag([100, 100, 10]);
+
+[K_lqr, P_matrix, poles_cl] = lqr(A, B, Q_lqr, R_lqr);
+
+disp('Matriz de Ganhos K calculada com sucesso:');
+disp(K_lqr);
+
+disp('Novos Polos em Malha Fechada:');
+disp(poles_cl);
+
+G_lqr = pinv(-C * inv(A - B * K_lqr) * B);
+sys_lqr_bf = ss(A - B * K_lqr, B * G_lqr, C, zeros(p, p));
+
+
+%  VISUALIZAÇÃO E COMPARAÇÃO DE DESEMPENHO (MIMO STEP)
+t = 0:0.001:0.5; 
+[y, t] = step(sys_lqr_bf, t); 
+
+figure('Name', 'Rastreamento de Referência em Malha Fechada (LQR)', 'Color', 'w');
+
+% Saída q2 devido à Ref q2
+subplot(2,2,1);
+plot(t, y(:,1,1), 'b', 'LineWidth', 2); grid on;
+title('Ref q_2 \rightarrow Posição q_2'); 
+ylabel('Ângulo (rad)');
+
+% Saída q3 devido à Ref q2
+subplot(2,2,3);
+plot(t, y(:,2,1), 'b', 'LineWidth', 2); grid on;
+title('Ref q_2 \rightarrow Posição q_3'); 
+ylabel('Deslocamento (m)'); xlabel('Tempo (s)');
+
+% Saída q2 devido à Ref q3
+subplot(2,2,2);
+plot(t, y(:,1,2), 'r', 'LineWidth', 2); grid on;
+title('Ref q_3 \rightarrow Posição q_2');
+
+% Saída q3 devido à Ref q3
+subplot(2,2,4);
+plot(t, y(:,2,2), 'r', 'LineWidth', 2); grid on;
+title('Ref q_3 \rightarrow Posição q_3'); 
+xlabel('Tempo (s)');
+
+% Plot comparativo de rejeição de perturbação
+x0 = [0.05; 0.02; 0; 0; 0]; % Robô deslocado do alvo
+[y_ol, t_ol] = initial(ss(A, B, C, D), x0, 4);   % Resposta em Malha Aberta
+[y_cl, t_cl] = initial(sys_lqr_bf, x0, 4);     % Resposta com LQR
+
+figure('Name', 'Rejeição de Perturbação: Malha Aberta vs LQR', 'Color', 'w');
+subplot(2,1,1);
+plot(t_ol, y_ol(:,1), 'r--', 'LineWidth', 1.5); hold on;
+plot(t_cl, y_cl(:,1), 'b', 'LineWidth', 2);
+grid on; legend('Malha Aberta', 'LQR Controlado');
+title('Recuperação da Junta q_2 após distúrbio'); ylabel('Ângulo (rad)');
+
+subplot(2,1,2);
+plot(t_ol, y_ol(:,2), 'r--', 'LineWidth', 1.5); hold on;
+plot(t_cl, y_cl(:,2), 'b', 'LineWidth', 2);
+grid on;
+title('Recuperação da Junta q_3 após distúrbio'); ylabel('Deslocamento (m)');
+xlabel('Tempo (s)');
+
+
+%  CASO ESCALONAMENTO REALISTA
+
+% % Q focado na precisão
+% Q_lqr = diag([1e6, 1e6, 100, 100, 100]);
+% 
+% % 2. AUMENTAR R (Penaliza severamente o uso excessivo de torque/força)
+% % Subir esses valores faz o LQR "economizar" os motores, reduzindo o pico de torque
+% R_lqr = diag([100, 100, 10]);
+% 
+% % Re-calculando o ganho ótimo e o pré-filtro
+% [K_lqr, ~, ~] = lqr(A, B, Q_lqr, R_lqr);
+% G_lqr = pinv(-C * inv(A - B * K_lqr) * B);
+
+% 3. DEFINIÇÃO DE AMPLITUDES CIRÚRGICAS REAIS (Substituindo o degrau de 1 metro)
+amp_q2 = 5 * pi / 180;  % 5 graus de rotação (em radianos)
+amp_q3 = 0.01;          % 1 centímetro de penetração (em metros)
+
+% Matriz de escala para aplicar as amplitudes reais nas entradas do sistema MIMO
+Matriz_Escala = diag([amp_q2, amp_q3]);
+sys_lqr_bf = ss(A - B * K_lqr, B * G_lqr * Matriz_Escala, C, zeros(2,2));
+
+
+%  EXTRAÇÃO E PLOT DO ESFORÇO DE CONTROLE
+
+t = 0:0.001:1;
+[~, ~, x_traj] = step(sys_lqr_bf, t); 
+
+u_degrau_q2 = zeros(length(t), m);
+u_degrau_q3 = zeros(length(t), m);
+
+for idx = 1:length(t)
+    % Cenário 1: Cirurgião moveu 5 graus em q2 (Ref = [amp_q2; 0])
+    x_t_q2 = squeeze(x_traj(idx, :, 1))';
+    u_degrau_q2(idx, :) = (-K_lqr * x_t_q2 + G_lqr * [amp_q2; 0])';
+    
+    % Cenário 2: Cirurgião afundou 1 cm em q3 (Ref = [0; amp_q3])
+    x_t_q3 = squeeze(x_traj(idx, :, 2))';
+    u_degrau_q3(idx, :) = (-K_lqr * x_t_q3 + G_lqr * [0; amp_q3])';
+end
+
+% --- GERANDO O PLOT ---
+figure('Name', 'Esforco de Controle Realista (LQR Suave)', 'Color', 'w');
+
+subplot(2,1,1);
+plot(t, u_degrau_q2(:,1), 'b-', 'LineWidth', 2); hold on;
+plot(t, u_degrau_q2(:,2), 'r-', 'LineWidth', 2);
+plot(t, u_degrau_q2(:,3), 'g-', 'LineWidth', 2); grid on;
+title('Esforço de Controle: Comando de 5\circ em q_2');
+ylabel('Torque (Nm) / Força (N)');
+legend('\tau_1 (Base)', '\tau_2 (Elevação)', 'F_3 (Inserção)');
+
+subplot(2,1,2);
+plot(t, u_degrau_q3(:,1), 'b-', 'LineWidth', 2); hold on;
+plot(t, u_degrau_q3(:,2), 'r-', 'LineWidth', 2);
+plot(t, u_degrau_q3(:,3), 'g-', 'LineWidth', 2); grid on;
+title('Esforço de Controle: Comando de 1cm em q_3');
+xlabel('Tempo (s)');
+ylabel('Torque (Nm) / Força (N)');
 
 %% =====================================================================
 %  2) CONTROLE POR ALOCACAO DE POLOS
