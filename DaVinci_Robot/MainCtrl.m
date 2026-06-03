@@ -15,9 +15,9 @@ else
 end
 
 
-%% =====================================================================
+%% ======================
 %  0) ANÁLSIE DO SISTEMA
-%  =====================================================================
+%  ======================
 
 % Sistema reduzido
 A = A_reduced;
@@ -32,9 +32,9 @@ n_outputs = size(C, 1);
 
 ControlAnalysis(A, B, C, D);
 
-%% =====================================================================
+%% ====================
 %  1) CONTROLE POR LQR
-%  =====================================================================
+%  ====================
 
 % --- Definição dos limites máximos toleráveis (Abordagem de Bryson) ---
 err_q2_max = 0.001;  % 0.001 rad de erro tolerável
@@ -65,7 +65,7 @@ disp(Q_lqr);
 disp('Matriz de penalidade R:');
 disp(R_lqr);
 
-[K_lqr, P_matrix, poles_cl] = lqr(A, B, Q_lqr, R_lqr);
+[K_lqr, ~, poles_cl] = lqr(A, B, Q_lqr, R_lqr);
 
 disp('Matriz de ganhos K:');
 disp(K_lqr);
@@ -73,6 +73,124 @@ disp(K_lqr);
 disp('Polos em malha fechada:');
 disp(poles_cl);
 
+%% ==================================
+%  2) CONTROLE POR ALOCAÇÃO DE POLOS
+%  ==================================
+
+% --- Estratégia de seleção de polos (par dominante + 3 rápidos) ---
+% polos_dominantes = [-6 + 6i, -6 - 6i];
+% polos_rapidos    = [-6, -10, -15];
+% ctrl_poles = [polos_dominantes, polos_rapidos];
+
+% Estratégia baseada na escala do LQR
+ctrl_poles = poles_cl';
+% ctrl_poles = [-4.5, -5 + 6i, -5 - 6i, -10 + 25i, -10 - 25i];
+
+disp('============================================');
+disp(' PARÂMETROS DE CONTROLE - ALOCAÇÃO DE POLOS ');
+disp('============================================');
+disp('Polos desejados para a malha fechada:');
+disp(ctrl_poles);
+
+% Cálculo da matriz de ganhos usando o algoritmo de Place
+F_pp = place(A, B, ctrl_poles);
+
+disp('Matriz de ganhos F calculada:');
+disp(F_pp);
+
+
+%% =======================================
+%  COMPARATIVO DE REGULADORES (LQR vs PP)
+%  =======================================
+
+% MFs para análise de condição inicial
+sys_reg_lqr = ss(A - B * K_lqr, zeros(size(B)), C, zeros(size(D)));
+sys_reg_pp  = ss(A - B * F_pp,  zeros(size(B)), C, zeros(size(D)));
+
+t_reg = 0:0.001:2; 
+x0 = [0.05; 0.02; 0; 0; 0]; % Desvio inicial do equilíbrio
+
+% Simulação de condição inicial
+[y_reg_lqr, ~, x_reg_lqr] = initial(sys_reg_lqr, x0, t_reg);
+[y_reg_pp,  ~, x_reg_pp]  = initial(sys_reg_pp,  x0, t_reg);
+
+% --- REGULAÇÃO DE POSIÇÃO (RETORNO AO EQUILÍBRIO) ---
+figure('Name', 'Reguladores: Resposta à condição inicial', 'Color', 'w');
+
+subplot(2,1,1);
+plot(t_reg, y_reg_lqr(:,1), 'b', 'LineWidth', 2); hold on;
+plot(t_reg, y_reg_pp(:,1),  'r', 'LineWidth', 2); grid on;
+title('Regulação da junta q_2 - Resposta à condição inicial');
+ylabel('Desvio angular (rad)');
+legend('Regulador LQR', 'Regulador PP');
+
+subplot(2,1,2);
+plot(t_reg, y_reg_lqr(:,2), 'b', 'LineWidth', 2); hold on;
+plot(t_reg, y_reg_pp(:,2),  'r', 'LineWidth', 2); grid on;
+title('Regulação da junta q_3 - Resposta à condição inicial');
+xlabel('Tempo (s)'); ylabel('Desvio linear (m)');
+
+
+% --- ESFORÇO DE CONTROLE PURO (u = -Kx) ---
+u_reg_lqr = zeros(length(t_reg), n_inputs);
+u_reg_pp  = zeros(length(t_reg), n_inputs);
+
+for idx = 1:length(t_reg)
+    u_reg_lqr(idx, :) = (-K_lqr * x_reg_lqr(idx, :)')';
+    u_reg_pp(idx, :)  = (-F_pp  * x_reg_pp(idx, :)')';
+end
+
+figure('Name', 'Reguladores: Esforço de controle', 'Color', 'w');
+
+subplot(2,1,1);
+plot(t_reg, u_reg_lqr(:,2), 'b', 'LineWidth', 2); hold on;
+plot(t_reg, u_reg_pp(:,2),  'r', 'LineWidth', 2); grid on;
+title('Esforço do regulador na junta 2: Torque \tau_2');
+ylabel('Torque (Nm)');
+legend('Regulador LQR', 'Regulador PP');
+
+subplot(2,1,2);
+plot(t_reg, u_reg_lqr(:,3), 'b', 'LineWidth', 2); hold on;
+plot(t_reg, u_reg_pp(:,3),  'r', 'LineWidth', 2); grid on;
+title('Esforço do regulador na junta 3: Forca F_3');
+xlabel('Tempo (s)'); ylabel('Forca (N)');
+
+
+% --- REJEIÇÃO DE PERTURBAÇÃO, MATRIZ E ---
+% Entrada é o distúrbio w e a mola é (A-BK)
+sys_dist_lqr = ss(A - B * K_lqr, E, C, zeros(n_outputs, 1));
+sys_dist_pp  = ss(A - B * F_pp,  E, C, zeros(n_outputs, 1));
+
+% Criando o sinal de respiração do paciente: frequência de 0.5 Hz (30 respirações por minuto)
+% Amplitude de 0.005 (5 milímetros de deslocamento do tecido)
+f_respiracao = 0.5; 
+omega_w = 2 * pi * f_respiracao;
+w_sinal = 0.005 * sin(omega_w * t_reg); 
+
+% Simulação temporal com a perturbação ativa através da matriz E
+[y_dist_lqr] = lsim(sys_dist_lqr, w_sinal, t_reg);
+[y_dist_pp]  = lsim(sys_dist_pp,  w_sinal, t_reg);
+
+figure('Name', 'Reguladores: Rejeicao de Perturbacao Continua (Matriz E)', 'Color', 'w');
+
+subplot(2,1,1);
+plot(t_reg, y_dist_lqr(:,1), 'b', 'LineWidth', 2); hold on;
+plot(t_reg, y_dist_pp(:,1),  'r', 'LineWidth', 2); grid on;
+title('Desvio da Junta q2 sob Perturbacao Respiratoria Continua');
+ylabel('Erro Angular (rad)');
+legend('Regulador LQR', 'Regulador PP');
+
+subplot(2,1,2);
+plot(t_reg, y_dist_lqr(:,2), 'b', 'LineWidth', 2); hold on;
+plot(t_reg, y_dist_pp(:,2),  'r', 'LineWidth', 2); grid on;
+title('Desvio da Junta q3 sob Perturbacao Respiratoria Continua');
+xlabel('Tempo (s)'); ylabel('Erro Linear (m)');
+
+%% =======================================
+%  PRÉ ALIMENTAÇÃO E ACOMP. DE REF. - LQR
+%  =======================================
+
+% SISTEMA COM BLOCO DE PRÉ ALIMENTAÇÃO
 G_lqr = pinv(-C * inv(A - B * K_lqr) * B);
 sys_lqr_bf = ss(A - B * K_lqr, B * G_lqr, C, zeros(n_outputs, n_outputs));
 
@@ -170,30 +288,12 @@ xlabel('Tempo (s)');
 ylabel('Torque (Nm) / Força (N)');
 
 
-%% =====================================================================
-%  2) CONTROLE POR ALOCAÇÃO DE POLOS
-%  =====================================================================
 
-% --- Estratégia de seleção de polos (par dominante + 3 rápidos) ---
-polos_dominantes = [-6 + 6i, -6 - 6i];
-polos_rapidos    = [-6, -10, -15];
-ctrl_poles = [polos_dominantes, polos_rapidos];
+%% =======================================
+%  PRÉ ALIMENTAÇÃO E ACOMP. DE REF. - PP
+%  =======================================
 
-% Estratégia baseada na escala suave do LQR
-% ctrl_poles = [-4.5, -5 + 6i, -5 - 6i, -10 + 25i, -10 - 25i];
-
-disp('============================================');
-disp(' PARÂMETROS DE CONTROLE - ALOCAÇÃO DE POLOS ');
-disp('============================================');
-disp('Polos desejados para a malha fechada:');
-disp(ctrl_poles);
-
-% Cálculo da matriz de ganhos usando o algoritmo de Place
-F_pp = place(A, B, ctrl_poles);
-
-disp('Matriz de ganhos F calculada:');
-disp(F_pp);
-
+% SISTEMA COM BLOCO DE PRÉ ALIMENTAÇÃO
 G_pp = pinv(-C * inv(A - B * F_pp) * B);
 sys_pp_bf = ss(A - B * F_pp, B * G_pp, C, zeros(n_outputs, n_outputs));
 
@@ -286,11 +386,6 @@ plot(t_eff, u_pp_q3(:,3), 'g-', 'LineWidth', 2); grid on;
 title('Esforço de Controle: Comando de 1cm em q_3');
 xlabel('Tempo (s)');
 ylabel('Torque (Nm) / Força (N)');
-
-
-
-
-
 
 
 %% =====================================================================
