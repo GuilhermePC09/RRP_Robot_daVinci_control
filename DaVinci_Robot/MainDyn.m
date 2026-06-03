@@ -103,7 +103,7 @@ disp(D_num);
 disp('Numeric Perturbation Matrix E:');
 disp(E_num);
 
-disp(eig(A_num));
+% disp(eig(A_num));
 
 
 %% ----- Reduced system -----
@@ -129,6 +129,11 @@ disp('Reduced State Matrix A (5x5):');
 disp(A_reduced);
 disp('Reduced Input Matrix B (5x3):');
 disp(B_reduced);
+
+% EXPORTING MATRICES FOR MAIN CONTROL
+disp('Saving reduced matrices for control analysis...');
+save('DV_reduced_model.mat', 'A_reduced', 'B_reduced', 'C_reduced', 'D_reduced', 'E_reduced');
+disp('File "DV_reduced_model.mat" generated!');
 
 %% ----- Model analysis (FT, poles, zeros, routh table) -----
 

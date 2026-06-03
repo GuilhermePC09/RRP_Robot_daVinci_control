@@ -1,5 +1,18 @@
-% LIMPEZA 
+% LIMPEZA E INÍCIO
+
+clear;
 clc;
+close all;
+
+% Carregando matrizes do modelo reduzido
+nome_arquivo = 'DV_reduced_model.mat';
+
+if exist(nome_arquivo, 'file')
+    load(nome_arquivo);
+    fprintf('=> Modelo do daVinci carregado com sucesso de "%s"!\n', nome_arquivo);
+else
+    error('Erro: Arquivo "%s" não encontrado. Rode o script MainDyn primeiro.', nome_arquivo);
+end
 
 
 %% =====================================================================
@@ -13,9 +26,9 @@ C = C_reduced;
 D = D_reduced;
 E = E_reduced;
 
-n = size(A, 1);     % numero de estados
-m = size(B, 2);     % numero de entradas
-p = size(C, 1);     % numero de saidas
+n_states = size(A, 1);
+n_inputs = size(B, 2);
+n_outputs = size(C, 1);
 
 ControlAnalysis(A, B, C, D);
 
@@ -31,70 +44,78 @@ err_dq1_max = 0.1;   % 0.1 rad/s tolerável
 err_dq2_max = 0.1;   % 0.1 rad/s tolerável
 err_dq3_max = 0.1;   % 0.1 m/s tolerável
 
+% --- Definição do esforço dos atuadores (Capacidade dos Motores) ---
+tau1_max = 15;  
+tau2_max = 37; 
+f3_max   = 424;
+
 % Matriz Q (5x5 para o sistema reduzido)
 Q_lqr = diag([1/err_q2_max^2, 1/err_q3_max^2, ...
               1/err_dq1_max^2, 1/err_dq2_max^2, 1/err_dq3_max^2]);
 
-% --- Definição do esforço dos atuadores (Capacidade dos Motores) ---
-tau1_max = 15;  % Exemplo: Motor aguenta 10 Nm
-tau2_max = 37;  % Exemplo: Motor aguenta 10 Nm
-f3_max   = 424;  % Exemplo: Motor linear aguenta 50 N
-
 % Matriz R (3x3 para os 3 atuadores)
-% R_lqr = diag([1/tau1_max^2, 1/tau2_max^2, 1/f3_max^2]);
-R_lqr = diag([100, 100, 10]);
+R_lqr = diag([tau1_max*10, tau2_max*10, f3_max/10]);
+
+disp('==============================');
+disp(' PARÂMETROS DE CONTROLE - LQR ');
+disp('==============================');
+
+disp('Matriz de penalidade Q:');
+disp(Q_lqr);
+disp('Matriz de penalidade R:');
+disp(R_lqr);
 
 [K_lqr, P_matrix, poles_cl] = lqr(A, B, Q_lqr, R_lqr);
 
-disp('Matriz de Ganhos K calculada com sucesso:');
+disp('Matriz de ganhos K:');
 disp(K_lqr);
 
-disp('Novos Polos em Malha Fechada:');
+disp('Polos em malha fechada:');
 disp(poles_cl);
 
 G_lqr = pinv(-C * inv(A - B * K_lqr) * B);
-sys_lqr_bf = ss(A - B * K_lqr, B * G_lqr, C, zeros(p, p));
+sys_lqr_bf = ss(A - B * K_lqr, B * G_lqr, C, zeros(n_outputs, n_outputs));
 
 
-%  VISUALIZAÇÃO E COMPARAÇÃO DE DESEMPENHO (MIMO STEP)
+%  COMPARAÇÃO DE DESEMPENHO (MIMO STEP)
 t = 0:0.001:0.5; 
-[y, t] = step(sys_lqr_bf, t); 
+[y_lqr, t] = step(sys_lqr_bf, t); 
 
 figure('Name', 'Rastreamento de Referência em Malha Fechada (LQR)', 'Color', 'w');
 
 % Saída q2 devido à Ref q2
 subplot(2,2,1);
-plot(t, y(:,1,1), 'b', 'LineWidth', 2); grid on;
+plot(t, y_lqr(:,1,1), 'b', 'LineWidth', 2); grid on;
 title('Ref q_2 \rightarrow Posição q_2'); 
 ylabel('Ângulo (rad)');
 
 % Saída q3 devido à Ref q2
 subplot(2,2,3);
-plot(t, y(:,2,1), 'b', 'LineWidth', 2); grid on;
+plot(t, y_lqr(:,2,1), 'b', 'LineWidth', 2); grid on;
 title('Ref q_2 \rightarrow Posição q_3'); 
 ylabel('Deslocamento (m)'); xlabel('Tempo (s)');
 
 % Saída q2 devido à Ref q3
 subplot(2,2,2);
-plot(t, y(:,1,2), 'r', 'LineWidth', 2); grid on;
+plot(t, y_lqr(:,1,2), 'r', 'LineWidth', 2); grid on;
 title('Ref q_3 \rightarrow Posição q_2');
 
 % Saída q3 devido à Ref q3
 subplot(2,2,4);
-plot(t, y(:,2,2), 'r', 'LineWidth', 2); grid on;
+plot(t, y_lqr(:,2,2), 'r', 'LineWidth', 2); grid on;
 title('Ref q_3 \rightarrow Posição q_3'); 
 xlabel('Tempo (s)');
 
-% Plot comparativo de rejeição de perturbação
+% COMPARATIVO DE REJEIÇÃO DE PERTURBAÇÃO
 x0 = [0.05; 0.02; 0; 0; 0]; % Robô deslocado do alvo
-[y_ol, t_ol] = initial(ss(A, B, C, D), x0, 4);   % Resposta em Malha Aberta
-[y_cl, t_cl] = initial(sys_lqr_bf, x0, 4);     % Resposta com LQR
+[y_ol, t_ol] = initial(ss(A, B, C, D), x0, 4); % Resposta em malha aberta
+[y_cl, t_cl] = initial(sys_lqr_bf, x0, 4); % Resposta com LQR
 
 figure('Name', 'Rejeição de Perturbação: Malha Aberta vs LQR', 'Color', 'w');
 subplot(2,1,1);
 plot(t_ol, y_ol(:,1), 'r--', 'LineWidth', 1.5); hold on;
 plot(t_cl, y_cl(:,1), 'b', 'LineWidth', 2);
-grid on; legend('Malha Aberta', 'LQR Controlado');
+grid on; legend('Malha Aberta', 'Controle LQR');
 title('Recuperação da Junta q_2 após distúrbio'); ylabel('Ângulo (rad)');
 
 subplot(2,1,2);
@@ -105,48 +126,32 @@ title('Recuperação da Junta q_3 após distúrbio'); ylabel('Deslocamento (m)')
 xlabel('Tempo (s)');
 
 
-%  CASO ESCALONAMENTO REALISTA
+% ESFORÇO DE CONTROLE PARA STEP REALISTA
 
-% % Q focado na precisão
-% Q_lqr = diag([1e6, 1e6, 100, 100, 100]);
-% 
-% % 2. AUMENTAR R (Penaliza severamente o uso excessivo de torque/força)
-% % Subir esses valores faz o LQR "economizar" os motores, reduzindo o pico de torque
-% R_lqr = diag([100, 100, 10]);
-% 
-% % Re-calculando o ganho ótimo e o pré-filtro
-% [K_lqr, ~, ~] = lqr(A, B, Q_lqr, R_lqr);
-% G_lqr = pinv(-C * inv(A - B * K_lqr) * B);
-
-% 3. DEFINIÇÃO DE AMPLITUDES CIRÚRGICAS REAIS (Substituindo o degrau de 1 metro)
-amp_q2 = 5 * pi / 180;  % 5 graus de rotação (em radianos)
-amp_q3 = 0.01;          % 1 centímetro de penetração (em metros)
+amp_q2 = 5 * pi / 180; % 5 graus de rotação (em radianos)
+amp_q3 = 0.01; % 1 centímetro de penetração (em metros)
 
 % Matriz de escala para aplicar as amplitudes reais nas entradas do sistema MIMO
-Matriz_Escala = diag([amp_q2, amp_q3]);
-sys_lqr_bf = ss(A - B * K_lqr, B * G_lqr * Matriz_Escala, C, zeros(2,2));
-
-
-%  EXTRAÇÃO E PLOT DO ESFORÇO DE CONTROLE
+Matriz_escala = diag([amp_q2, amp_q3]);
+sys_lqr_bf = ss(A - B * K_lqr, B * G_lqr * Matriz_escala, C, zeros(2,2));
 
 t = 0:0.001:1;
 [~, ~, x_traj] = step(sys_lqr_bf, t); 
 
-u_degrau_q2 = zeros(length(t), m);
-u_degrau_q3 = zeros(length(t), m);
+u_degrau_q2 = zeros(length(t), n_inputs);
+u_degrau_q3 = zeros(length(t), n_inputs);
 
 for idx = 1:length(t)
-    % Cenário 1: Cirurgião moveu 5 graus em q2 (Ref = [amp_q2; 0])
+    % Cenário 1: 5 graus em q2 (Ref = [amp_q2; 0])
     x_t_q2 = squeeze(x_traj(idx, :, 1))';
     u_degrau_q2(idx, :) = (-K_lqr * x_t_q2 + G_lqr * [amp_q2; 0])';
     
-    % Cenário 2: Cirurgião afundou 1 cm em q3 (Ref = [0; amp_q3])
+    % Cenário 2: 1 cm em q3 (Ref = [0; amp_q3])
     x_t_q3 = squeeze(x_traj(idx, :, 2))';
     u_degrau_q3(idx, :) = (-K_lqr * x_t_q3 + G_lqr * [0; amp_q3])';
 end
 
-% --- GERANDO O PLOT ---
-figure('Name', 'Esforco de Controle Realista (LQR Suave)', 'Color', 'w');
+figure('Name', 'Esforço de Controle Realista (LQR)', 'Color', 'w');
 
 subplot(2,1,1);
 plot(t, u_degrau_q2(:,1), 'b-', 'LineWidth', 2); hold on;
@@ -164,45 +169,157 @@ title('Esforço de Controle: Comando de 1cm em q_3');
 xlabel('Tempo (s)');
 ylabel('Torque (Nm) / Força (N)');
 
+
 %% =====================================================================
-%  2) CONTROLE POR ALOCACAO DE POLOS
+%  2) CONTROLE POR ALOCAÇÃO DE POLOS
 %  =====================================================================
-% NOTA: place exige multiplicidade <= m. Com todos em -1 e m<n, vai
-%       falhar -- ajuste os polos antes de rodar.
-ctrl_poles = -1 * ones(1, n);
 
+% --- Estratégia de seleção de polos (par dominante + 3 rápidos) ---
+polos_dominantes = [-6 + 6i, -6 - 6i];
+polos_rapidos    = [-6, -10, -15];
+ctrl_poles = [polos_dominantes, polos_rapidos];
+
+% Estratégia baseada na escala suave do LQR
+% ctrl_poles = [-4.5, -5 + 6i, -5 - 6i, -10 + 25i, -10 - 25i];
+
+disp('============================================');
+disp(' PARÂMETROS DE CONTROLE - ALOCAÇÃO DE POLOS ');
+disp('============================================');
+disp('Polos desejados para a malha fechada:');
+disp(ctrl_poles);
+
+% Cálculo da matriz de ganhos usando o algoritmo de Place
 F_pp = place(A, B, ctrl_poles);
-G_pp = inv(-C * inv(A - B*F_pp) * B);
 
-sys_pp_bf = ss(A - B*F_pp, B*G_pp, C, zeros(p, m));
+disp('Matriz de ganhos F calculada:');
+disp(F_pp);
+
+G_pp = pinv(-C * inv(A - B * F_pp) * B);
+sys_pp_bf = ss(A - B * F_pp, B * G_pp, C, zeros(n_outputs, n_outputs));
+
+%  COMPARAÇÃO DE DESEMPENHO (MIMO STEP)
+t = 0:0.001:0.5; 
+[y_pp, t] = step(sys_pp_bf, t); 
+
+figure('Name', 'Rastreamento de Referência em Malha Fechada (Alocação de Polos)', 'Color', 'w');
+
+% Saída q2 devido à Ref q2
+subplot(2,2,1);
+plot(t, y_pp(:,1,1), 'b', 'LineWidth', 2); grid on;
+title('Ref q_2 \rightarrow Posição q_2'); 
+ylabel('Ângulo (rad)');
+
+% Saída q3 devido à Ref q2
+subplot(2,2,3);
+plot(t, y_pp(:,2,1), 'b', 'LineWidth', 2); grid on;
+title('Ref q_2 \rightarrow Posição q_3'); 
+ylabel('Deslocamento (m)'); xlabel('Tempo (s)');
+
+% Saída q2 devido à Ref q3
+subplot(2,2,2);
+plot(t, y_pp(:,1,2), 'r', 'LineWidth', 2); grid on;
+title('Ref q_3 \rightarrow Posição q_2');
+
+% Saída q3 devido à Ref q3
+subplot(2,2,4);
+plot(t, y_pp(:,2,2), 'r', 'LineWidth', 2); grid on;
+title('Ref q_3 \rightarrow Posição q_3'); 
+xlabel('Tempo (s)');
+
+
+% COMPARATIVO DE REJEIÇÃO DE PERTURBAÇÃO
+x0 = [0.05; 0.02; 0; 0; 0]; % Mesmo distúrbio anatômico inicial
+[y_ol, t_ol] = initial(ss(A, B, C, D), x0, 4); 
+[y_cl_pp, t_cl_pp] = initial(sys_pp_bf, x0, 4); 
+
+figure('Name', 'Rejeição de Perturbação: Malha Aberta vs Alocação de Polos', 'Color', 'w');
+subplot(2,1,1);
+plot(t_ol, y_ol(:,1), 'r--', 'LineWidth', 1.5); hold on;
+plot(t_cl_pp, y_cl_pp(:,1), 'b', 'LineWidth', 2);
+grid on; legend('Malha Aberta', 'Controle PP');
+title('Recuperação da Junta q_2 após distúrbio'); ylabel('Ângulo (rad)');
+
+subplot(2,1,2);
+plot(t_ol, y_ol(:,2), 'r--', 'LineWidth', 1.5); hold on;
+plot(t_cl_pp, y_cl_pp(:,2), 'b', 'LineWidth', 2);
+grid on;
+title('Recuperação da Junta q_3 após distúrbio'); ylabel('Deslocamento (m)');
+xlabel('Tempo (s)');
+
+
+% ESFORÇO DE CONTROLE PARA STEP REALISTA
+amp_q2 = 5 * pi / 180; % 5 graus de rotação
+amp_q3 = 0.01;        % 1 cm de penetração
+
+Matriz_escala = diag([amp_q2, amp_q3]);
+sys_pp_scaled = ss(A - B * F_pp, B * G_pp * Matriz_escala, C, zeros(2,2));
+
+t_eff = 0:0.001:1;
+[~, ~, x_traj_pp] = step(sys_pp_scaled, t_eff); 
+
+u_pp_q2 = zeros(length(t_eff), n_inputs);
+u_pp_q3 = zeros(length(t_eff), n_inputs);
+
+for idx = 1:length(t_eff)
+    % Comando de 5 graus em q2
+    x_t_q2 = squeeze(x_traj_pp(idx, :, 1))';
+    u_pp_q2(idx, :) = (-F_pp * x_t_q2 + G_pp * [amp_q2; 0])';
+    
+    % Comando de 1cm em q3
+    x_t_q3 = squeeze(x_traj_pp(idx, :, 2))';
+    u_pp_q3(idx, :) = (-F_pp * x_t_q3 + G_pp * [0; amp_q3])';
+end
+
+figure('Name', 'Esforço de Controle Realista (Alocação de Polos)', 'Color', 'w');
+subplot(2,1,1);
+plot(t_eff, u_pp_q2(:,1), 'b-', 'LineWidth', 2); hold on;
+plot(t_eff, u_pp_q2(:,2), 'r-', 'LineWidth', 2);
+plot(t_eff, u_pp_q2(:,3), 'g-', 'LineWidth', 2); grid on;
+title('Esforço de Controle: Comando de 5\circ em q_2');
+ylabel('Torque (Nm) / Força (N)');
+legend('\tau_1 (Base)', '\tau_2 (Elevação)', 'F_3 (Inserção)');
+
+subplot(2,1,2);
+plot(t_eff, u_pp_q3(:,1), 'b-', 'LineWidth', 2); hold on;
+plot(t_eff, u_pp_q3(:,2), 'r-', 'LineWidth', 2);
+plot(t_eff, u_pp_q3(:,3), 'g-', 'LineWidth', 2); grid on;
+title('Esforço de Controle: Comando de 1cm em q_3');
+xlabel('Tempo (s)');
+ylabel('Torque (Nm) / Força (N)');
+
+
+
+
+
+
 
 %% =====================================================================
 %  3) OBSERVADOR POR ALOCACAO DE POLOS
 %  =====================================================================
 % NOTA: mesma restricao de multiplicidade (limite = p).
-obs_poles = -1 * ones(1, n);
+obs_poles = -1 * ones(1, n_states);
 
 L_pp = place(A', C', obs_poles)';
 
 A_obs_pp = A - L_pp * C;
 B_obs_pp = [B, L_pp];
-C_obs_pp = eye(n);
-D_obs_pp = zeros(n, m + p);
+C_obs_pp = eye(n_states);
+D_obs_pp = zeros(n_states, n_inputs + n_outputs);
 
 sys_obs_pp = ss(A_obs_pp, B_obs_pp, C_obs_pp, D_obs_pp);
 
 %% =====================================================================
 %  4) OBSERVADOR LQR
 %  =====================================================================
-W_obs = eye(n);
-V_obs = eye(p);
+W_obs = eye(n_states);
+V_obs = eye(n_outputs);
 
 L_lqr = lqr(A', C', W_obs, V_obs)';
 
 A_obs_lqr = A - L_lqr * C;
 B_obs_lqr = [B, L_lqr];
-C_obs_lqr = eye(n);
-D_obs_lqr = zeros(n, m + p);
+C_obs_lqr = eye(n_states);
+D_obs_lqr = zeros(n_states, n_inputs + n_outputs);
 
 sys_obs_lqr = ss(A_obs_lqr, B_obs_lqr, C_obs_lqr, D_obs_lqr);
 
@@ -214,23 +331,23 @@ sys_obs_lqr = ss(A_obs_lqr, B_obs_lqr, C_obs_lqr, D_obs_lqr);
 %       [-C   0 ]        [ 0 ]
 %  u = -F xhat + H xi,  [F  -H] = lqr(Ae, Be, Qe, Re)
 
-Ae = [A,   zeros(n, p);
-      -C,  zeros(p, p)];
-Be = [B; zeros(p, m)];
-Ce = [C, zeros(p, p)];
+Ae = [A,   zeros(n_states, n_outputs);
+      -C,  zeros(n_outputs, n_outputs)];
+Be = [B; zeros(n_outputs, n_inputs)];
+Ce = [C, zeros(n_outputs, n_outputs)];
 
-Qe_lqr = eye(n + p);
-Re_lqr = eye(m);
+Qe_lqr = eye(n_states + n_outputs);
+Re_lqr = eye(n_inputs);
 
 Fe_lqr = lqr(Ae, Be, Qe_lqr, Re_lqr);
-F_i_lqr = Fe_lqr(:, 1:n);
-H_i_lqr = -Fe_lqr(:, n+1:end);
+F_i_lqr = Fe_lqr(:, 1:n_states);
+H_i_lqr = -Fe_lqr(:, n_states+1:end);
 
 A_cl_int_lqr = [A - B*F_i_lqr,  B*H_i_lqr;
-                -C,              zeros(p, p)];
-B_cl_int_lqr = [zeros(n, p); eye(p)];
-C_cl_int_lqr = [C, zeros(p, p)];
-D_cl_int_lqr = zeros(p, p);
+                -C,              zeros(n_outputs, n_outputs)];
+B_cl_int_lqr = [zeros(n_states, n_outputs); eye(n_outputs)];
+C_cl_int_lqr = [C, zeros(n_outputs, n_outputs)];
+D_cl_int_lqr = zeros(n_outputs, n_outputs);
 
 sys_int_lqr = ss(A_cl_int_lqr, B_cl_int_lqr, C_cl_int_lqr, D_cl_int_lqr);
 
@@ -238,17 +355,17 @@ sys_int_lqr = ss(A_cl_int_lqr, B_cl_int_lqr, C_cl_int_lqr, D_cl_int_lqr);
 %  6) CONTROLE COM ACAO INTEGRADORA -- ALOCACAO DE POLOS
 %  =====================================================================
 % NOTA: place no sistema aumentado limita multiplicidade a m.
-int_poles = -1 * ones(1, n + p);
+int_poles = -1 * ones(1, n_states + n_outputs);
 
 Fe_pp = place(Ae, Be, int_poles);
-F_i_pp = Fe_pp(:, 1:n);
-H_i_pp = -Fe_pp(:, n+1:end);
+F_i_pp = Fe_pp(:, 1:n_states);
+H_i_pp = -Fe_pp(:, n_states+1:end);
 
 A_cl_int_pp = [A - B*F_i_pp,  B*H_i_pp;
-               -C,             zeros(p, p)];
-B_cl_int_pp = [zeros(n, p); eye(p)];
-C_cl_int_pp = [C, zeros(p, p)];
-D_cl_int_pp = zeros(p, p);
+               -C,             zeros(n_outputs, n_outputs)];
+B_cl_int_pp = [zeros(n_states, n_outputs); eye(n_outputs)];
+C_cl_int_pp = [C, zeros(n_outputs, n_outputs)];
+D_cl_int_pp = zeros(n_outputs, n_outputs);
 
 sys_int_pp = ss(A_cl_int_pp, B_cl_int_pp, C_cl_int_pp, D_cl_int_pp);
 
@@ -263,10 +380,10 @@ L_use = L_lqr;       % ou L_pp
 
 A_full = [ A,         -B*F_use,                B*H_use;
            L_use*C,    A - B*F_use - L_use*C,  B*H_use;
-          -C,          zeros(p, n),            zeros(p, p)];
-B_full = [zeros(n, p); zeros(n, p); eye(p)];
-C_full = [C, zeros(p, n), zeros(p, p)];
-D_full = zeros(p, p);
+          -C,          zeros(n_outputs, n_states),            zeros(n_outputs, n_outputs)];
+B_full = [zeros(n_states, n_outputs); zeros(n_states, n_outputs); eye(n_outputs)];
+C_full = [C, zeros(n_outputs, n_states), zeros(n_outputs, n_outputs)];
+D_full = zeros(n_outputs, n_outputs);
 
 sys_full = ss(A_full, B_full, C_full, D_full);
 
@@ -274,8 +391,10 @@ sys_full = ss(A_full, B_full, C_full, D_full);
 %  VERIFICACOES RAPIDAS
 %  =====================================================================
 fprintf('\n--- Polos em malha fechada ---\n');
-fprintf('LQR              : '); disp(eig(A - B*F_lqr).');
-fprintf('Pole placement   : '); disp(eig(A - B*F_pp).');
+fprintf('LQR              : '); disp(eig(A - B * K_lqr).');
+fprintf('Pole placement   : '); disp(eig(A - B * F_pp).');
+
+
 fprintf('Observador PP    : '); disp(eig(A - L_pp*C).');
 fprintf('Observador LQR   : '); disp(eig(A - L_lqr*C).');
 fprintf('Integ. LQR (aum) : '); disp(eig(Ae - Be*Fe_lqr).');
@@ -308,12 +427,12 @@ N_t  = length(t_fw);
 
 % --- Referência: degrau unitário em todos os n estados ---
 %     Ajuste xr_func conforme o sinal de referência desejado
-xr_func = @(t) ones(n, 1);        % referência constante (degrau)
+xr_func = @(t) ones(n_states, 1);        % referência constante (degrau)
 
 % --- Integração BACKWARD de eta ---
 %  d(eta)/dt = -(A - B*F_seg)'*eta - Q_seg*xr,  eta(t1) = Q1_seg*xr(t1)
 A_cl_seg = A - B * F_seg;
-eta      = zeros(n, N_t);
+eta      = zeros(n_states, N_t);
 eta(:, end) = Q1_seg * xr_func(t1);
 
 for k = N_t-1 : -1 : 1
@@ -325,9 +444,9 @@ end
 
 % --- Integração FORWARD de x ---
 %  dx/dt = A*x + B*u,  u = K*e + R^{-1}*B'*(eta - P*xr)
-x_seg = zeros(n, N_t);
-u_seg = zeros(m, N_t);
-x_seg(:, 1) = zeros(n, 1);        % condição inicial (ajuste se necessário)
+x_seg = zeros(n_states, N_t);
+u_seg = zeros(n_inputs, N_t);
+x_seg(:, 1) = zeros(n_states, 1);        % condição inicial (ajuste se necessário)
 
 for k = 1 : N_t-1
     xr_k      = xr_func(t_fw(k));
@@ -353,12 +472,12 @@ disp(eig(A_cl_seg).');
 %  Parâmetros do modelo exógeno — ajuste conforme o seu sistema.
 %  Aqui: referência constante (Ar = 0) e sem perturbação modelada.
 
-Ar  = zeros(n, n);             % modelo da referência (0 → degrau)
-E   = zeros(n, m);             % matriz de entrada da perturbação
-Aw  = zeros(m, m);             % modelo da perturbação (0 → constante)
+Ar  = zeros(n_states, n_states);             % modelo da referência (0 → degrau)
+E   = zeros(n_states, n_inputs);             % matriz de entrada da perturbação
+Aw  = zeros(n_inputs, n_inputs);             % modelo da perturbação (0 → constante)
 
 % Variável exógena aumentada: xo = [xr; w]
-r_xo = n + m;                  % dimensão de xo
+r_xo = n_states + n_inputs;                  % dimensão de xo
 
 % Matriz F_exo: agrupa (A - Ar) e E
 F_exo = [A - Ar, E];           % n × (n + m)
