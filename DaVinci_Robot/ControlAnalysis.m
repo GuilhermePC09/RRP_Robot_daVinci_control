@@ -11,9 +11,9 @@ tol = 1e-8;
 % Instantiating the state-space system object internally to prevent mismatches
 sys_control = ss(A, B, C, D);
 
-fprintf('=========================================================\n');
-fprintf(' MODERN CONTROL ANALYSIS  -  daVinci ROBOT (linearized)  \n');
-fprintf('=========================================================\n');
+fprintf('==========================================\n');
+fprintf(' MODERN CONTROL ANALYSIS  | DAVINCI ROBOT \n');
+fprintf('==========================================\n');
 fprintf(' States  (n) = %d  -> [q2, q3, dq1, dq2, dq3]\n', n_states);
 fprintf(' Inputs  (m) = %d  -> [Tau_1, Tau_2, Force_3]\n', n_inputs);
 fprintf(' Outputs (p) = %d  -> [q2, q3]\n\n',              n_outputs);
@@ -22,20 +22,15 @@ disp('A ='); disp(A);
 disp('B ='); disp(B);
 disp('C ='); disp(C);
 
-
 %% 1) STABILITY ANALYSIS
 fprintf('---------------------------------------------------------\n');
 fprintf(' 1) STABILITY ANALYSIS\n');
 fprintf('---------------------------------------------------------\n');
-
 eig_A  = eig(A);
 re_eig = real(eig_A);
-
 poles_reduced = pole(sys_control);
-zeros_reduced = tzero(sys_control);
 
 disp('Poles of the system:'); disp(poles_reduced);
-% disp('Zeros of the system:'); disp(zeros_reduced);
 
 if all(re_eig < -tol)
     asym_stable = true;
@@ -62,15 +57,12 @@ end
 figure('Name', 'Open-loop poles and zeros', 'Color', 'w');
 pzmap(sys_control); grid on;
 
-
 %% 2) CONTROLLABILITY
 fprintf('---------------------------------------------------------\n');
 fprintf(' 2) CONTROLLABILITY\n');
 fprintf('---------------------------------------------------------\n');
-
 Mc = ctrb(A, B);
 rank_Mc = rank(Mc);
-
 fprintf('Rank of Controllability Matrix (Mc) = %d  (Required n = %d)\n', rank_Mc, n_states);
 
 if rank_Mc == n_states
@@ -88,23 +80,19 @@ for k = 1:length(eig_A)
     r   = rank([lam*eye(n_states) - A, B]);
     status = 'controllable';
     if r ~= n_states, status = 'UNCONTROLLABLE'; end
-    fprintf('  %-28s %-10d %-15s\n', sprintf('%+8.4f %+8.4fi', real(lam), imag(lam)), r, status);
+    fprintf('  %-28s %-10d %-15s\n', sprintf('%+8.4f %+8.4fI', real(lam), imag(lam)), r, status);
 end
 fprintf('\n');
-
 
 %% 3) CONTROLLABLE / UNCONTROLLABLE DECOMPOSITION
 fprintf('---------------------------------------------------------\n');
 fprintf(' 3) CONTROLLABILITY DECOMPOSITION\n');
 fprintf('---------------------------------------------------------\n');
-
 [Abar_c, Bbar_c, Cbar_c, ~, k_c] = ctrbf(A, B, C);
 n_ctrb   = sum(k_c);
 n_unctrb = n_states - n_ctrb;
-
 fprintf('Controllable states  : %d\n',   n_ctrb);
 fprintf('Uncontrollable states: %d\n\n', n_unctrb);
-
 disp('Abar:'); disp(Abar_c);
 disp('Bbar:'); disp(Bbar_c);
 disp('Cbar:'); disp(Cbar_c);
@@ -119,12 +107,10 @@ else
     fprintf('All eigenvalues are controllable.\n\n');
 end
 
-
 %% 4) STABILIZABILITY
 fprintf('---------------------------------------------------------\n');
 fprintf(' 4) STABILIZABILITY\n');
 fprintf('---------------------------------------------------------\n');
-
 if n_unctrb == 0
     stabilizable = true;
     fprintf('=> STABILIZABLE (fully controllable).\n\n');
@@ -140,15 +126,12 @@ else
     end
 end
 
-
 %% 5) OBSERVABILITY
 fprintf('---------------------------------------------------------\n');
 fprintf(' 5) OBSERVABILITY\n');
 fprintf('---------------------------------------------------------\n');
-
 Mo = obsv(A, C);
 rank_Mo = rank(Mo);
-
 fprintf('Rank of Observability Matrix (Mo) = %d  (Required n = %d)\n', rank_Mo, n_states);
 
 if rank_Mo == n_states
@@ -166,24 +149,19 @@ for k = 1:length(eig_A)
     r   = rank([lam*eye(n_states) - A; C]);
     status = 'observable';
     if r ~= n_states, status = 'UNOBSERVABLE'; end
-    fprintf('  %-28s %-10d %-15s\n', sprintf('%+8.4f %+8.4fi', real(lam), imag(lam)), r, status);
+    fprintf('  %-28s %-10d %-15s\n', sprintf('%+8.4f %+8.4fI', real(lam), imag(lam)), r, status);
 end
 fprintf('\n');
-
 
 %% 6) OBSERVABLE / UNOBSERVABLE DECOMPOSITION
 fprintf('---------------------------------------------------------\n');
 fprintf(' 6) OBSERVABILITY DECOMPOSITION\n');
 fprintf('---------------------------------------------------------\n');
-
 [Abar_o, Bbar_o, Cbar_o, ~, k_o] = obsvf(A, B, C);
-
 n_obs   = sum(k_o);
 n_unobs = n_states - n_obs;
-
 fprintf('Observable states  : %d\n',   n_obs);
 fprintf('Unobservable states: %d\n\n', n_unobs);
-
 disp('Abar:'); disp(Abar_o);
 disp('Bbar:'); disp(Bbar_o);
 disp('Cbar:'); disp(Cbar_o);
@@ -198,12 +176,10 @@ else
     fprintf('All eigenvalues are observable.\n\n');
 end
 
-
 %% 7) DETECTABILITY
 fprintf('---------------------------------------------------------\n');
 fprintf(' 7) DETECTABILITY\n');
 fprintf('---------------------------------------------------------\n');
-
 if n_unobs == 0
     detectable = true;
     fprintf('=> DETECTABLE (fully observable).\n\n');
@@ -219,6 +195,40 @@ else
     end
 end
 
+%% 8) ADVANCED OPEN-LOOP ANALYSIS (MIMO FREQUENCY & ZEROS)
+fprintf('---------------------------------------------------------\n');
+fprintf(' 8) ADVANCED OPEN-LOOP ANALYSIS (MIMO FREQUENCY & ZEROS)\n');
+fprintf('---------------------------------------------------------\n');
+zeros_transmission = tzero(sys_control);
+fprintf('Zeros de Transmissao do Sistema MIMO:\n');
+
+if isempty(zeros_transmission)
+    fprintf('  Nenhum zero de transmissao encontrado.\n');
+    non_min_phase = false;
+else
+    disp(zeros_transmission);
+    if any(real(zeros_transmission) > tol)
+        non_min_phase = true;
+        fprintf('=> SISTEMA DE FASE NAO-MINIMA (Zeros no semiplano direito detectados).\n\n');
+    else
+        non_min_phase = false;
+        fprintf('=> SISTEMA DE FASE MINIMA (Todos os zeros no semiplano esquerdo).\n\n');
+    end
+end
+
+fprintf('Gerando curvas de resposta em frequencia avancadas...\n');
+
+% Análise 2: Valores Singulares MIMO (Sigma Plot)
+figure('Name', 'Malha Aberta: Valores Singulares (Sigma)', 'Color', 'w');
+sigma(sys_control); grid on;
+title('Diagrama de Valores Singulares (Sigma) de Malha Aberta');
+
+% Análise 4: Diagrama de Bode por Canais Cruzados (MIMO Bode)
+figure('Name', 'Malha Aberta: Diagrama de Bode MIMO', 'Color', 'w');
+bode(sys_control); grid on;
+title('Bode de Malha Aberta: Atuadores -> Juntas Medidas');
+
+fprintf('=> Figuras de Sigma e Bode geradas com sucesso.\n\n');
 
 %% SUMMARY
 fprintf('=========================================================\n');
@@ -229,10 +239,9 @@ fprintf('  Controllable          : %s   (rank Mc = %d / %d)\n',  yesno(fully_con
 fprintf('  Stabilizable          : %s\n',                         yesno(stabilizable));
 fprintf('  Observable            : %s   (rank Mo = %d / %d)\n',  yesno(fully_observable),   rank_Mo, n_states);
 fprintf('  Detectable            : %s\n',                         yesno(detectable));
+fprintf('  Non-minimum phase     : %s\n',                         yesno(non_min_phase));
 fprintf('=========================================================\n');
-
 end
-
 
 %% Helper
 function s = yesno(cond)
