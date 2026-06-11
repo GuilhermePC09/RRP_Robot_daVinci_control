@@ -15,9 +15,7 @@ else
 end
 
 
-%% ======================
-%  0) ANÁLSIE DO SISTEMA
-%  ======================
+%% ANÁLSIE DO SISTEMA
 
 % Sistema reduzido
 A = A_reduced;
@@ -30,13 +28,11 @@ n_states = size(A, 1);
 n_inputs = size(B, 2);
 n_outputs = size(C, 1);
 
-% ControlAnalysis(A, B, C, D);
+%ControlAnalysis(A, B, C, D);
 
-%% ====================
-%  1) CONTROLE POR LQR
-%  ====================
+%% CONTROLE POR LQR
 
-% --- Definição dos limites máximos toleráveis (Abordagem de Bryson) ---
+% Definição dos limites máximos toleráveis (Abordagem de Bryson)
 err_q2_max = 0.001;  % 0.001 rad de erro tolerável
 err_q3_max = 0.001;  % 0.001 m (1 mm) de erro tolerável
 
@@ -44,7 +40,7 @@ err_dq1_max = 0.1;   % 0.1 rad/s tolerável
 err_dq2_max = 0.1;   % 0.1 rad/s tolerável
 err_dq3_max = 0.01;   % 0.1 m/s tolerável
 
-% --- Definição do esforço dos atuadores (Capacidade dos Motores) ---
+% Definição do esforço dos atuadores (Capacidade dos Motores)
 tau1_max = 5.3;  
 tau2_max = 41; 
 f3_max   = 420;
@@ -78,9 +74,7 @@ disp(poles_cl);
 disp('Processando análises em malha fechada para LQR...');
 % AnalyzeCL(A, B, C, D, E, K_lqr, 'LQR');
 
-%% ==================================
-%  2) CONTROLE POR ALOCAÇÃO DE POLOS
-%  ==================================
+%% CONTROLE POR ALOCAÇÃO DE POLOS
 
 % Estratégia baseada nos polos do LQR
 % ctrl_poles = poles_cl';
@@ -105,223 +99,213 @@ disp('Processando análises em malha fechada para alocação de polos...');
 % AnalyzeCL(A, B, C, D, E, F_pp, 'PP');
 
 
-%% ====================================
-%  3) OBSERVADOR POR ALOCACAO DE POLOS
-%  ====================================
-% NOTA: mesma restricao de multiplicidade (limite = p).
-obs_poles = -1 * ones(1, n_states);
+%% OBSERVADOR DE ORDEM COMPLETA - IDENTIDADE
+   
+% Abordagem LQR
+Wc = 5000 * eye(n_states); % "ruído de processo"  — subir = observador mais rápido
+Vc = eye(n_outputs);    % "ruído de medição"   — subir = observador mais lento
+L = lqr(A', C', Wc, Vc).';
 
-L_pp = place(A', C', obs_poles)';
+%Abordagem Alocação de Polos
+% poles_obs_id = [-30+8i,-30+8i, -20, -25+2i, -25-2i];
+% L = place(A',C',poles_obs_id)';
 
-A_obs_pp = A - L_pp * C;
-B_obs_pp = [B, L_pp];
-C_obs_pp = eye(n_states);
-D_obs_pp = zeros(n_states, n_inputs + n_outputs);
+fprintf('Ganho do observador L:\n'); disp(L);
+fprintf('Autovalores de (A - L*C):\n'); disp(eig(A - L*C).');
 
-sys_obs_pp = ss(A_obs_pp, B_obs_pp, C_obs_pp, D_obs_pp);
+% Sistema do observador isolado (entradas = [u; y], saída = x_hat)
+A_obs = A - L * C;
+B_obs = [B, L];
+C_obs = eye(n_states);
+D_obs = zeros(n_states, n_inputs + n_outputs);
+sys_obs = ss(A_obs, B_obs, C_obs, D_obs);
 
-%% ==================
-%  4) OBSERVADOR LQR
-%  ==================
-W_obs = eye(n_states);
-V_obs = eye(n_outputs);
+% pzmap(sys_obs)
 
-L_lqr = lqr(A', C', W_obs, V_obs)';
+%% OBSERVADOR DE ORDEM REDUZIDA
 
-A_obs_lqr = A - L_lqr * C;
-B_obs_lqr = [B, L_lqr];
-C_obs_lqr = eye(n_states);
-D_obs_lqr = zeros(n_states, n_inputs + n_outputs);
+% Construção da transformação T e particionamento
+V_mat = [zeros(n_states - n_outputs, n_outputs), eye(n_states - n_outputs)];
+T  = [C; V_mat];
 
-sys_obs_lqr = ss(A_obs_lqr, B_obs_lqr, C_obs_lqr, D_obs_lqr);
+if abs(det(T)) < 1e-10
+    error('T = [C; V_mat] e (quase) singular: escolha outra particao V_mat.');
+end
+Ti = inv(T);
 
-%% =====================================================================
-%  5) CONTROLE COM ACAO INTEGRADORA -- LQR
-%  =====================================================================
-%  xa = [x; xi],  xi_dot = r - y
-%  Ae = [ A   0 ]   Be = [ B ]   Ce = [ C  0 ]
-%       [-C   0 ]        [ 0 ]
-%  u = -F xhat + H xi,  [F  -H] = lqr(Ae, Be, Qe, Re)
+M = Ti(:, 1:n_outputs);            % n x m
+N = Ti(:, n_outputs+1:end);        % n x (n-m)
 
-Ae = [A,   zeros(n_states, n_outputs);
-      -C,  zeros(n_outputs, n_outputs)];
-Be = [B; zeros(n_outputs, n_inputs)];
-Ce = [C, zeros(n_outputs, n_outputs)];
+A11 = C     * A * M;   % m     x m
+A12 = C     * A * N;   % m     x (n-m)
+A21 = V_mat * A * M;   % (n-m) x m
+A22 = V_mat * A * N;   % (n-m) x (n-m)
+B1  = C     * B;       % m     x n_inputs
+B2  = V_mat * B;       % (n-m) x n_inputs
 
-Qe_lqr = eye(n_states + n_outputs);
-Re_lqr = eye(n_inputs);
+% Observabilidade e condicionamento do par reduzido (A22, A12)
+rank_obs_red = rank(obsv(A22, A12));
+fprintf('Posto da observabilidade reduzida = %d (necessario n-m = %d)\n', ...
+        rank_obs_red, n_states - n_outputs);
+if rank_obs_red < n_states - n_outputs
+    error('Par (A22, A12) NAO observavel: observador reduzido nao realizavel.');
+end
+fprintf('cond(obsv(A22,A12)) = %.3e   (se >> 1e6, o ganho J tende a crescer)\n', ...
+        cond(obsv(A22, A12)));
 
-Fe_lqr = lqr(Ae, Be, Qe_lqr, Re_lqr);
-F_i_lqr = Fe_lqr(:, 1:n_states);
-H_i_lqr = -Fe_lqr(:, n_states+1:end);
+% Ganho J via LQE no sistema fictício (A22', A12')
+Qe_red = 8000 * eye(n_states - n_outputs); % "ruído de processo"  — subir = mais rápido
+Re_red = eye(n_outputs);              % "ruído de medição"   — subir = mais lento
+J = lqr(A22', A12', Qe_red, Re_red).';
 
-A_cl_int_lqr = [A - B*F_i_lqr,  B*H_i_lqr;
-                -C,              zeros(n_outputs, n_outputs)];
-B_cl_int_lqr = [zeros(n_states, n_outputs); eye(n_outputs)];
-C_cl_int_lqr = [C, zeros(n_outputs, n_outputs)];
-D_cl_int_lqr = zeros(n_outputs, n_outputs);
+% Ganho J via PP no sistema fictício (A22', A12')
+% J = place(A22', A12', 3*ctrl_poles).';
 
-sys_int_lqr = ss(A_cl_int_lqr, B_cl_int_lqr, C_cl_int_lqr, D_cl_int_lqr);
+% Matrizes do observador 
+F_red = A22 - J * A12;
+G_red = A21 - J * A11 + F_red * J;
+H_red = B2  - J * B1;
+S_red = M   + N * J;
 
-%% =====================================================================
-%  6) CONTROLE COM ACAO INTEGRADORA -- ALOCACAO DE POLOS
-%  =====================================================================
-% NOTA: place no sistema aumentado limita multiplicidade a m.
-int_poles = -1 * ones(1, n_states + n_outputs);
+fprintf('Polos do observador reduzido (eig F):\n'); disp(eig(F_red).');
+fprintf('norm(J) = %.3e\n', norm(J));
 
-Fe_pp = place(Ae, Be, int_poles);
-F_i_pp = Fe_pp(:, 1:n_states);
-H_i_pp = -Fe_pp(:, n_states+1:end);
+% Sistema aumentado [x; z] em malha aberta 
 
-A_cl_int_pp = [A - B*F_i_pp,  B*H_i_pp;
-               -C,             zeros(n_outputs, n_outputs)];
-B_cl_int_pp = [zeros(n_states, n_outputs); eye(n_outputs)];
-C_cl_int_pp = [C, zeros(n_outputs, n_outputs)];
-D_cl_int_pp = zeros(n_outputs, n_outputs);
+% [dx]   [ A       0 ] [x]   [ B ]      [ E ]
+% [dz] = [ G*C     F ] [z] + [ H ] u  + [ 0 ] w
+A_aug_red = [A,         zeros(n_states, n_states - n_outputs);
+             G_red * C, F_red];
+B_aug_red = [B; H_red];
+E_aug_red = [E; zeros(n_states - n_outputs, size(E, 2))];
+C_aug_red = [C, zeros(n_outputs, n_states - n_outputs)];
 
-sys_int_pp = ss(A_cl_int_pp, B_cl_int_pp, C_cl_int_pp, D_cl_int_pp);
+% Reconstrução de x_hat a partir do estado aumentado:
 
-%% =====================================================================
-%  7) OBSERVACAO COM ACAO INTEGRADORA (planta + observador + integrador)
-%  =====================================================================
-%  xc = [x; xhat; xi]  -> 2n + p estados, entrada = r
+% x_hat = S*C*x + N*z  =  recover_xhat * [x; z]
+recover_xhat = [S_red * C, N];
 
-F_use = F_i_lqr;     % ou F_i_pp
-H_use = H_i_lqr;     % ou H_i_pp
-L_use = L_lqr;       % ou L_pp
+% --- Inicialização correta de z (usar no bloco 3) ---------------------
+% O reduzido lê y exatamente; só tem liberdade na parte nao-medida (w).
+% Dada uma estimativa inicial das velocidades w_hat0 e o estado real x0:
+%   w_hat = z + J*y   =>   z0 = w_hat0 - J*C*x0
+% w_hat0 = 0  => observador "ignorante" das velocidades.
+build_z0 = @(w_hat0, x0) w_hat0 - J * C * x0;
 
-A_full = [ A,         -B*F_use,                B*H_use;
-           L_use*C,    A - B*F_use - L_use*C,  B*H_use;
-          -C,          zeros(n_outputs, n_states),            zeros(n_outputs, n_outputs)];
-B_full = [zeros(n_states, n_outputs); zeros(n_states, n_outputs); eye(n_outputs)];
-C_full = [C, zeros(n_outputs, n_states), zeros(n_outputs, n_outputs)];
-D_full = zeros(n_outputs, n_outputs);
+%% CONVERGENCIA DO ERRO DOS OBSERVADORES (MALHA ABERTA)
 
-sys_full = ss(A_full, B_full, C_full, D_full);
+% Tempo de simulação
+t_sim = 0 : 1e-3 : 2;
 
-%% =====================================================================
-%  VERIFICACOES RAPIDAS
-%  =====================================================================
-fprintf('\n--- Polos em malha fechada ---\n');
-fprintf('LQR              : '); disp(eig(A - B * K_lqr).');
-fprintf('Pole placement   : '); disp(eig(A - B * F_pp).');
+% Estado inicial REAL da planta
+x0_real = [0.05; 0.02; 1; 3; 2];
 
+% Estado inicial estimado 
+x0_hat = zeros(n_states, 1);
 
-fprintf('Observador PP    : '); disp(eig(A - L_pp*C).');
-fprintf('Observador LQR   : '); disp(eig(A - L_lqr*C).');
-fprintf('Integ. LQR (aum) : '); disp(eig(Ae - Be*Fe_lqr).');
-fprintf('Integ. PP  (aum) : '); disp(eig(Ae - Be*Fe_pp).');
-fprintf('Sistema completo : '); disp(eig(A_full).');
+% Erro inicial
+e0 = x0_real - x0_hat;
 
+% Compactação observador reduzido
+obs_red.F_red        = F_red;
+obs_red.A_aug_red    = A_aug_red;
+obs_red.recover_xhat = recover_xhat;
+obs_red.J            = J;
 
-%% =====================================================================
-%  8) SEGUIDOR LQ COM PRÉ-ALIMENTAÇÃO (Módulo 8 - Seção 1)
-%  Lei de controle: u(t) = K*e(t) + R^{-1}*B'*(eta - P*xr)
-%  onde e(t) = xr(t) - x(t)  e  K = R^{-1}*B'*P  (mesmo K do LQR)
-%  eta satisfaz: d(eta)/dt = -(A - B*K)'*eta - Q*xr,  eta(t1) = Q1*xr(t1)
-%  =====================================================================
-%  Reutiliza F_lqr e as matrizes Q_lqr, R_lqr do item 1.
-%  Implementação: integração BACKWARD de eta, depois FORWARD de x.
+% Nomes dos estados
+state_names = {'q_2','q_3','dq_1','dq_2','dq_3'};
 
-Q_seg   = Q_lqr;          % mesma ponderação de estados
-Q1_seg  = Q_lqr;          % penalização terminal (pode ajustar)
-R_seg   = R_lqr;          % mesma ponderação de entradas
+Comp_Obsv(A, C, L, obs_red, x0_real, t_sim, state_names, x0_hat)
 
-% --- Ganho do seguidor (MESMO K do regulador LQR) ---
-[F_seg, P_seg, ~] = lqr(A, B, Q_seg, R_seg);
-% F_seg == F_lqr  (confirmação)
+%% ANÁLISE DE CONVERGÊNCIA E SEPARAÇÃO DE POLOS
 
-% --- Horizonte de simulação ---
-t1   = 10;                         % tempo final [s]
-dt   = 1e-3;                       % passo de integração [s]
-t_fw = 0 : dt : t1;                % vetor de tempo forward
-N_t  = length(t_fw);
+obs_red.F_red        = F_red;
+obs_red.A_aug_red    = A_aug_red;
+obs_red.recover_xhat = recover_xhat;
+obs_red.J            = J;
 
-% --- Referência: degrau unitário em todos os n estados ---
-%     Ajuste xr_func conforme o sinal de referência desejado
-xr_func = @(t) ones(n_states, 1);        % referência constante (degrau)
+state_labels  = {'Posicao q2 (rad)','Posicao q3 (m)', ...
+           'Velocidade dq1 (rad/s)','Velocidade dq2 (rad/s)','Velocidade dq3 (m/s)'};
+x0_real = [0.05; 0.02; 1; 3; 2];
+x0_hat  = [0.05; 0.02; 0; 0; 0];
 
-% --- Integração BACKWARD de eta ---
-%  d(eta)/dt = -(A - B*F_seg)'*eta - Q_seg*xr,  eta(t1) = Q1_seg*xr(t1)
-A_cl_seg = A - B * F_seg;
-eta      = zeros(n_states, N_t);
-eta(:, end) = Q1_seg * xr_func(t1);
+AnalyseCL_Obsv(A, C, L, obs_red, poles_cl, x0_real, t_sim, state_labels, x0_hat)
 
-for k = N_t-1 : -1 : 1
-    t_k       = t_fw(k+1);
-    xr_k      = xr_func(t_k);
-    deta      = -A_cl_seg' * eta(:, k+1) - Q_seg * xr_k;
-    eta(:, k) = eta(:, k+1) - dt * deta;   % Euler backward
+%% SIMULAÇÃO EM MALHA FECHADA COMPLETA (LQR + OBS REDUZIDO)
+
+disp('==================================================');
+disp(' INICIANDO SIMULAÇÃO EM MALHA FECHADA COMPLETA... ');
+disp('==================================================');
+
+% 1. Construção das Matrizes do Sistema Aumentado em Malha Fechada
+
+% Combinando a dinâmica da planta real com a lei de controle u = -K_lqr * x_hat
+A_cl_total = [ (A - B * K_lqr * S_red * C),            (-B * K_lqr * N);
+               (G_red * C - H_red * K_lqr * S_red * C), (F_red - H_red * K_lqr * N) ];
+
+% Entrada de perturbação: o sinal w entra apenas na planta física
+B_cl_total = [ E; 
+               zeros(n_states - n_outputs, size(E, 2)) ];
+
+% Matriz C auxiliar para extrair todas as variáveis de estado do bloco ss
+C_cl_total = eye(2 * n_states - n_outputs);
+D_cl_total = zeros(2 * n_states - n_outputs, 1);
+
+% Instanciação do sistema global de Malha Fechada
+sys_cl_total = ss(A_cl_total, B_cl_total, C_cl_total, D_cl_total);
+
+% 2. Configuração do Tempo e do Distúrbio Respiratório Senoidal
+t_sim2 = 0 : 0.001 : 5;
+f_respiracao = 0.5;    % 30 respirações por minuto
+omega_w = 2 * pi * f_respiracao;
+w_senoidal = 0.005 * sin(omega_w * t_sim2); % 5 mm de amplitude da respiração
+
+% 3. Condições Iniciais Corretas (Planta desalinhada e Observador no escuro)
+x0_real = [0.05; 0.02; 1; 3; 2]; 
+z0_correto = build_z0(zeros(n_states - n_outputs, 1), x0_real);
+x0_cl_total = [x0_real; z0_correto];
+
+% 4. Execução da Simulação Temporal Combinada (Tranco + Respiração Contínua)
+[X_cl_total, ~] = lsim(sys_cl_total, w_senoidal, t_sim2, x0_cl_total);
+
+% Separação dos Estados Reais e dos Estados do Observador
+x_real_sim2 = X_cl_total(:, 1:n_states);
+z_sim2      = X_cl_total(:, n_states+1:end);
+
+% Reconstrução das variáveis estimadas (x_hat) e dos esforços (u) no tempo
+x_hat_sim2 = zeros(length(t_sim2), n_states);
+u_sim2     = zeros(length(t_sim2), n_inputs);
+
+for i = 1:length(t_sim2)
+    % Reconstrói o vetor x_hat usando a equação de saída do observador reduzido
+    x_hat_sim2(i, :) = (S_red * C * x_real_sim2(i, :)' + N * z_sim2(i, :)')';
+    
+    % Calcula o torque real injetado nas juntas: u = -K * x_hat
+    u_sim2(i, :) = (-K_lqr * x_hat_sim2(i, :)')';
 end
 
-% --- Integração FORWARD de x ---
-%  dx/dt = A*x + B*u,  u = K*e + R^{-1}*B'*(eta - P*xr)
-x_seg = zeros(n_states, N_t);
-u_seg = zeros(n_inputs, N_t);
-x_seg(:, 1) = zeros(n_states, 1);        % condição inicial (ajuste se necessário)
+%  GERAÇÃO DOS GRÁFICOS
 
-for k = 1 : N_t-1
-    xr_k      = xr_func(t_fw(k));
-    e_k       = xr_k - x_seg(:, k);
-    ff_k      = R_seg \ (B' * (eta(:, k) - P_seg * xr_k));  % pré-alimentação
-    u_seg(:,k) = F_seg * e_k + ff_k;
-    dx        = A * x_seg(:, k) + B * u_seg(:, k);
-    x_seg(:, k+1) = x_seg(:, k) + dt * dx;
-end
-u_seg(:, end) = u_seg(:, end-1);  % repete último ponto
+% --- GRÁFICO 1: COMPORTAMENTO DAS POSIÇÕES DAS JUNTAS ---
+figure('Name', 'Malha Fechada Completa: Posicoes das Juntas', 'Color', 'w');
 
-fprintf('\n--- Seguidor LQ (Módulo 8 - Seção 1) ---\n');
-fprintf('Polos malha fechada seguidor : ');
-disp(eig(A_cl_seg).');
+subplot(2,1,1);
+plot(t_sim2, x_real_sim2(:,1), 'b', 'LineWidth', 2); grid on;
+title('Resposta da Junta q2 (Elevacao) com Controle via Estado Estimado');
+ylabel('Posicao Real (rad)');
 
-%% =====================================================================
-%  9) SEGUIDOR COM MODELO DE VARIÁVEIS EXÓGENAS (Módulo 8 - Seção 2)
-%  Referência: dxr/dt = Ar*xr  |  perturbação: dw/dt = Aw*w
-%  Lei de controle: u = K*e - N*F_exo*xo
-%    com F_exo = [A - Ar, E],  xo = [xr; w]
-%    e   N = inv(M * inv(A) * B) * M * inv(A),  M escolhida pelo usuário
-%  =====================================================================
-%  Parâmetros do modelo exógeno — ajuste conforme o seu sistema.
-%  Aqui: referência constante (Ar = 0) e sem perturbação modelada.
+subplot(2,1,2);
+plot(t_sim2, x_real_sim2(:,2), 'b', 'LineWidth', 2); grid on;
+title('Resposta da Junta q3 (Insercao) com Controle via Estado Estimado');
+xlabel('Tempo (s)'); ylabel('Posicao Real (m)');
 
-Ar  = zeros(n_states, n_states);             % modelo da referência (0 → degrau)
-E   = zeros(n_states, n_inputs);             % matriz de entrada da perturbação
-Aw  = zeros(n_inputs, n_inputs);             % modelo da perturbação (0 → constante)
+% --- GRÁFICO 2: COMPORTAMENTO DOS ESFORÇOS DE CONTROLE REALISTAS ---
+figure('Name', 'Malha Fechada Completa: Esforcos de Controle', 'Color', 'w');
+plot(t_sim2, u_sim2(:,1), 'b', 'LineWidth', 2); hold on;
+plot(t_sim2, u_sim2(:,2), 'r', 'LineWidth', 2);
+plot(t_sim2, u_sim2(:,3), 'g', 'LineWidth', 2); grid on;
+title('Esforco de Controle dos Motores (Realimentacao por Observador Reduzido)');
+xlabel('Tempo (s)'); ylabel('Torque (Nm) / Forca (N)');
+legend('tau1 (Base)', 'tau2 (Elevacao)', 'F3 (Insercao)', 'Location', 'best');
 
-% Variável exógena aumentada: xo = [xr; w]
-r_xo = n_states + n_inputs;                  % dimensão de xo
-
-% Matriz F_exo: agrupa (A - Ar) e E
-F_exo = [A - Ar, E];           % n × (n + m)
-
-% Escolha de M: para seguir saídas medidas, use M = C.
-%   M deve ser r×n com r = número de referências rastreáveis (r ≤ m).
-%   Como m = 3 e p = 2, usamos as p primeiras linhas de C.
-M = C;                         % p × n  (ajuste se quiser rastrear outros sinais)
-
-% Ganho de pré-alimentação N = inv(M*inv(A)*B) * M*inv(A)
-MiAB = M * (A \ B);            % p × m
-if rank(MiAB) < size(MiAB, 1)
-    warning(['M*inv(A)*B nao e invertivel. ' ...
-             'Nao e possivel rastrear todos os sinais de referencia com os atuadores disponiveis.']);
-    N_ff = pinv(MiAB) * M / A; % pseudo-inversa como fallback
-else
-    N_ff = MiAB \ (M / A);     % p × n
-end
-
-% Lei de controle: u = K*e - N_ff * F_exo * xo
-% Reutiliza F_lqr como ganho de realimentação K
-K_exo = F_lqr;                 % 3 × n
-
-fprintf('\n--- Seguidor c/ variáveis exógenas (Módulo 8 - Seção 2) ---\n');
-fprintf('Dimensão de N_ff        : %d × %d\n', size(N_ff));
-fprintf('Dimensão de F_exo       : %d × %d\n', size(F_exo));
-fprintf('Polos malha fechada     : ');
-disp(eig(A - B * K_exo).');
-
-% Verificação do erro em regime permanente
-%   e_inf = inv(A) * (F_exo - B*N_ff*F_exo) * xo_inf
-%   Para xo constante (Ar=0, Aw=0), xo_inf = [xr_inf; w_inf]
-fprintf('Verificando cancelamento do erro em regime permanente...\n');
-residuo = M / A * (F_exo - B * N_ff * F_exo);
-fprintf('||M*inv(A)*(F_exo - B*N*F_exo)|| = %.2e  (esperado ~0)\n', norm(residuo));
+disp('=> Simulação do Cenário 2 concluída e gráficos gerados!');
