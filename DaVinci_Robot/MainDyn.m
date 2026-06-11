@@ -398,7 +398,7 @@ fprintf('Running Scenario 2A: %dsin(%dt) on joint 2\n', A, omega);
 
 % Linear Simulation
 u_sin_lin = zeros(length(t_vec), 3);
-u_sin_lin(:, 2) = A * sin(omega * t_vec); % seno aplicado no torque Tau2
+u_sin_lin(:, 2) = A * sin(omega * t_vec); % sine applied to torque Tau2
 [y_lin, t_lin] = lsim(sys_reduced, u_sin_lin, t_vec);
 q2_lin = y_lin(:,1) + x_eq(2); 
 
@@ -430,7 +430,7 @@ fprintf('Running Scenario 2B: %dsin(%dt) on joint 3\n', A, omega);
 
 % Linear Simulation
 u_sin_lin = zeros(length(t_vec), 3);
-u_sin_lin(:, 3) = A * sin(omega * t_vec); % seno aplicado no torque Tau3
+u_sin_lin(:, 3) = A * sin(omega * t_vec); % sine applied to torque Tau3
 [y_lin, t_lin] = lsim(sys_reduced, u_sin_lin, t_vec);
 q3_lin = y_lin(:,2) + x_eq(3); 
 

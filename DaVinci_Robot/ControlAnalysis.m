@@ -218,12 +218,12 @@ end
 
 fprintf('Gerando curvas de resposta em frequencia avancadas...\n');
 
-% Análise 2: Valores Singulares MIMO (Sigma Plot)
+% Analysis 2: MIMO Singular Values (Sigma Plot)
 figure('Name', 'Malha Aberta: Valores Singulares (Sigma)', 'Color', 'w');
 sigma(sys_control); grid on;
 title('Diagrama de Valores Singulares (Sigma) de Malha Aberta');
 
-% Análise 4: Diagrama de Bode por Canais Cruzados (MIMO Bode)
+% Analysis 4: Cross-Channel Bode Diagram (MIMO Bode)
 figure('Name', 'Malha Aberta: Diagrama de Bode MIMO', 'Color', 'w');
 bode(sys_control); grid on;
 title('Bode de Malha Aberta: Atuadores -> Juntas Medidas');

@@ -1,28 +1,28 @@
 function AnalyseCL_Obsv(A, C, L, obs_red, poles_control, x0_real, t_sim, state_labels, x0_hat)
-% Tabela de polos, convergencia de estados e mapa global.
+% Pole table, state convergence and global map.
 %
 % ---------------------------------------------------------------------------
-% ENTRADAS
-%   A             : matriz de estados da planta            (n x n)
-%   C             : matriz de saida                        (m x n)
-%   L             : ganho do observador de ordem completa  (n x m)
-%   obs_red       : struct com o observador reduzido (Friedland), campos:
-%                     .F_red        (n-m) x (n-m)    dinamica do erro reduzido
-%                     .A_aug_red    (2n-m) x (2n-m)  sistema aumentado [x; z]
-%                     .recover_xhat n x (2n-m)       reconstroi x_hat
-%                     .J            (n-m) x m         ganho do observador reduzido
-%   poles_control : polos de malha fechada do controlador (LQR/PP), vetor n x 1
-%                   (no script original: poles_cl)
-%   x0_real       : estado inicial REAL da planta          (n x 1)
-%   t_sim         : vetor de tempo da simulacao
-%   state_labels  : (opcional) cell com rotulos dos estados. Default {'x_1'..}
-%   x0_hat        : (opcional) estimativa inicial do estado (n x 1).
+% INPUTS
+%   A             : plant state matrix                      (n x n)
+%   C             : output matrix                           (m x n)
+%   L             : full-order observer gain                (n x m)
+%   obs_red       : struct with reduced-order observer (Friedland), fields:
+%                     .F_red        (n-m) x (n-m)    reduced error dynamics
+%                     .A_aug_red    (2n-m) x (2n-m)  augmented system [x; z]
+%                     .recover_xhat n x (2n-m)       reconstructs x_hat
+%                     .J            (n-m) x m         reduced-order observer gain
+%   poles_control : closed-loop poles of the controller (LQR/PP), n x 1 vector
+%                   (in the original script: poles_cl)
+%   x0_real       : REAL initial state of the plant         (n x 1)
+%   t_sim         : simulation time vector
+%   state_labels  : (optional) cell array with state labels. Default {'x_1'..}
+%   x0_hat        : (optional) initial state estimate (n x 1).
 %                   Default = zeros(n,1).
 %
 % ---------------------------------------------------------------------------
 
 
-    % Dimensoes e defaults
+    % Dimensions and defaults
     n_states  = size(A, 1);
     n_outputs = size(C, 1);
     n_red     = n_states - n_outputs;
@@ -36,13 +36,13 @@ function AnalyseCL_Obsv(A, C, L, obs_red, poles_control, x0_real, t_sim, state_l
         x0_hat = zeros(n_states, 1);
     end
 
-    % Desempacota o observador reduzido 
+    % Unpack the reduced-order observer
     F_red        = obs_red.F_red;
     A_aug_red    = obs_red.A_aug_red;
     recover_xhat = obs_red.recover_xhat;
     J            = obs_red.J;
 
-    % Checagens de consistencia 
+    % Consistency checks
     assert(isequal(size(F_red), [n_red, n_red]), ...
         'obs_red.F_red deve ser (n-m)x(n-m) = %dx%d.', n_red, n_red);
     assert(isequal(size(A_aug_red), [n_aug, n_aug]), ...
@@ -56,7 +56,7 @@ function AnalyseCL_Obsv(A, C, L, obs_red, poles_control, x0_real, t_sim, state_l
     poles_control  = poles_control(:);
 
 
-    % TABELA COMPARATIVA DE POLOS (PRINCIPIO DA SEPARACAO)
+    % COMPARATIVE POLE TABLE (SEPARATION PRINCIPLE)
 
     fmt = @(p) sprintf('%+6.2f %+6.2fi', real(p), imag(p));
     dash = '       -       ';
@@ -75,14 +75,14 @@ function AnalyseCL_Obsv(A, C, L, obs_red, poles_control, x0_real, t_sim, state_l
     fprintf('===================================================================\n\n');
 
 
-    % CONVERGENCIA DOS ESTADOS: PLANTA VS ESTIMADO (MALHA ABERTA)
+    % STATE CONVERGENCE: PLANT VS ESTIMATED (OPEN LOOP)
     e0 = x0_real - x0_hat;
 
-    % Erro do observador completo -> reconstroi x_hat_pp = x_real - e_pp
+    % Full-order observer error -> reconstruct x_hat_pp = x_real - e_pp
     sys_err_pp = ss(A_obs, zeros(n_states,1), eye(n_states), zeros(n_states,1));
     [e_pp, ~]  = initial(sys_err_pp, e0, t_sim);
 
-    % Observador reduzido (planta + observador em paralelo)
+    % Reduced-order observer (plant + observer in parallel)
     z0 = -J * C * x0_real;
     sys_aug_open = ss(A_aug_red, zeros(n_aug,1), eye(n_aug), zeros(n_aug,1));
     [X_aug, ~]   = initial(sys_aug_open, [x0_real; z0], t_sim);
@@ -102,7 +102,7 @@ function AnalyseCL_Obsv(A, C, L, obs_red, poles_control, x0_real, t_sim, state_l
         legend('Planta Real', 'Obs Ordem Completa', 'Obs Reduzido', 'Location', 'best');
     end
 
-    % MAPA GLOBAL DE POLOS EXPANDIDO
+    % EXPANDED GLOBAL POLE MAP
 
     figure('Name', 'Mapa Global de Polos do Sistema', 'Color', 'w');
     hold on; grid on;

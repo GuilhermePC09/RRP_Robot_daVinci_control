@@ -1,25 +1,25 @@
 function Comp_Obsv(A, C, L, obs_red, x0_real, t_sim, state_names, x0_hat)
-%Compara dinamica de erro e polos de dois observadores.
+%Compares error dynamics and poles of two observers.
 % ---------------------------------------------------------------------------
-% ENTRADAS
-%   A           : matriz de estados da planta            (n x n)
-%   C           : matriz de saida                        (m x n)
-%   L           : ganho do observador de ordem completa  (n x m)
-%   obs_red     : struct com o observador reduzido (Friedland), campos:
-%                   .F_red        (n-m) x (n-m)    dinamica do erro reduzido
-%                   .A_aug_red    (2n-m) x (2n-m)  sistema aumentado [x; z]
-%                   .recover_xhat n x (2n-m)       reconstroi x_hat = [S*C, N]*[x;z]
-%                   .J            (n-m) x m         ganho do observador reduzido
-%   x0_real     : estado inicial REAL da planta          (n x 1)
-%   t_sim       : vetor de tempo da simulacao
-%   state_names : (opcional) cell com nomes dos estados p/ rotulos.
+% INPUTS
+%   A           : plant state matrix                      (n x n)
+%   C           : output matrix                           (m x n)
+%   L           : full-order observer gain                (n x m)
+%   obs_red     : struct with reduced-order observer (Friedland), fields:
+%                   .F_red        (n-m) x (n-m)    reduced error dynamics
+%                   .A_aug_red    (2n-m) x (2n-m)  augmented system [x; z]
+%                   .recover_xhat n x (2n-m)       reconstructs x_hat = [S*C, N]*[x;z]
+%                   .J            (n-m) x m         reduced-order observer gain
+%   x0_real     : REAL initial state of the plant         (n x 1)
+%   t_sim       : simulation time vector
+%   state_names : (optional) cell array with state names for labels.
 %                 Default = {'x_1', ..., 'x_n'}
-%   x0_hat      : (opcional) estimativa inicial do estado (n x 1).
-%                 Default = zeros(n,1)  -> observador "ignorante"
+%   x0_hat      : (optional) initial state estimate (n x 1).
+%                 Default = zeros(n,1)  -> "uninformed" observer
 %
 % ---------------------------------------------------------------------------
 
-    % Dimensoes e defaults 
+    % Dimensions and defaults
     n_states  = size(A, 1);
     n_outputs = size(C, 1);
 
@@ -31,15 +31,15 @@ function Comp_Obsv(A, C, L, obs_red, x0_real, t_sim, state_names, x0_hat)
         x0_hat = zeros(n_states, 1);
     end
 
-    % Desempacota o observador reduzido
+    % Unpack the reduced-order observer
     F_red        = obs_red.F_red;
     A_aug_red    = obs_red.A_aug_red;
     recover_xhat = obs_red.recover_xhat;
     J            = obs_red.J;
 
-    n_aug = 2*n_states - n_outputs;   % ordem do sistema aumentado [x; z]
+    n_aug = 2*n_states - n_outputs;   % order of the augmented system [x; z]
 
-    % Checagens basicas de consistencia
+    % Basic consistency checks
     assert(isequal(size(F_red), [n_states-n_outputs, n_states-n_outputs]), ...
         'obs_red.F_red deve ser (n-m)x(n-m) = %dx%d.', ...
         n_states-n_outputs, n_states-n_outputs);
@@ -48,16 +48,16 @@ function Comp_Obsv(A, C, L, obs_red, x0_real, t_sim, state_names, x0_hat)
     assert(size(recover_xhat,1) == n_states && size(recover_xhat,2) == n_aug, ...
         'obs_red.recover_xhat deve ser n x (2n-m) = %dx%d.', n_states, n_aug);
 
-    %  Convergencia do erro em malha aberta
-    
-    % Observador de ordem completa:  de/dt = (A - L*C)e 
+    %  Open-loop error convergence
+
+    % Full-order observer:  de/dt = (A - L*C)e
     A_obs = A - L*C;
     e0    = x0_real - x0_hat;
 
     sys_err_pp = ss(A_obs, zeros(n_states,1), eye(n_states), zeros(n_states,1));
     [e_pp, ~]  = initial(sys_err_pp, e0, t_sim);
 
-    % Observador reduzido: planta + observador em paralelo 
+    % Reduced-order observer: plant + observer in parallel
     %   z0 = -J*C*x0_real
     z0 = -J * C * x0_real;
 
@@ -68,7 +68,7 @@ function Comp_Obsv(A, C, L, obs_red, x0_real, t_sim, state_names, x0_hat)
     xhat_red = (recover_xhat * X_aug.').';
     e_red    = x_real - xhat_red;
 
-    % Graficos por estado
+    % Plots per state
     for k = 1:n_states
         figure('Name', ['Erro de estimacao - ' state_names{k}], 'Color', 'w');
         plot(t_sim, e_pp(:, k),  'b-',  'LineWidth', 1.6); hold on;
@@ -80,7 +80,7 @@ function Comp_Obsv(A, C, L, obs_red, x0_real, t_sim, state_names, x0_hat)
         legend('PP (ordem completa)', 'Reduzido', 'Location', 'best');
     end
 
-    %  Mapa de polos dos observadores
+    %  Observer pole map
 
     figure('Name', 'Polos dos observadores', 'Color', 'w');
     hold on; grid on;
