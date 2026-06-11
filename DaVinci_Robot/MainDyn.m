@@ -315,20 +315,20 @@ n_numeric_expression = subs(n, sym_list, num_list);
 vars_state = [q1; q2; q3; dq1; dq2; dq3];
 
 matlabFunction(B_numeric_expression, 'File', 'GetBmatrix', 'Vars', {vars_state});
-matlabFunction(n_numeric_expression, 'File', 'Getnvector', 'Vars', {vars_state});
+matlabFunction(n_numeric_expression, 'File', 'Getnvector', 'Vars', {vars_state, w});
 
 % Dynamics function
 function dxdt = robot_dynamics(t, x, u_applied)
     dq = x(4:6);
-    dxdt = [dq; GetBmatrix(x) \ (u_applied - Getnvector(x))];
+    dxdt = [dq; GetBmatrix(x) \ (u_applied - Getnvector(x, 0))];
 end
 
 % Ode options
 opts = odeset('RelTol', 1e-6, 'AbsTol', 1e-9);
 
 % Torque needed no mantain equilibirum pose 
-x_eq = [0; 0; 0.2; 0; 0; 0]; % q3 = 0.2
-u_eq = Getnvector(x_eq);
+x_eq = [0; 0; 0.36; 0; 0; 0]; % q3 = q3_bar = 0.36
+u_eq = Getnvector(x_eq, 0);
 fprintf('\nEquilibrium Torque: [%.2f; %.2f; %.2f]\n', u_eq(1), u_eq(2), u_eq(3));
 
 % --------------------------------------------------

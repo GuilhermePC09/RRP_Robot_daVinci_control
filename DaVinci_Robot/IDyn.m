@@ -27,7 +27,7 @@ for k = 1:num_points
     x_current = [q_ref(:,k); dq_ref(:,k)];
     
     B_now = GetBmatrix(x_current);
-    n_now = Getnvector(x_current);
+    n_now = Getnvector(x_current, 0);
     
     % Inverse Dynamics: Tau = B*ddq + n
     tau_feedforward(:, k) = B_now * ddq_ref(:,k) + n_now;
