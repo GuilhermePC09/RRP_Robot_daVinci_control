@@ -32,10 +32,11 @@ n_outputs = size(C, 1);
 % ControlAnalysis(A, B, C, D);
 
 %% =====================================================================
-%  1) OBSERVADOR DE ORDEM COMPLETA
+%  1) OBSERVADOR DE ORDEM COMPLETA - IDENTIDADE
 %  =====================================================================
 
-Wc = 35 * eye(n_states);     % "ruído de processo"  — subir = observador mais rápido
+% Wc = 35 * eye(n_states);     % "ruído de processo"  — subir = observador mais rápido
+Wc = 5000 * eye(n_states); 
 Vc = eye(n_outputs);    % "ruído de medição"   — subir = observador mais lento
 
 L = lqr(A', C', Wc, Vc).';
@@ -50,7 +51,7 @@ C_obs = eye(n_states);
 D_obs = zeros(n_states, n_inputs + n_outputs);
 sys_obs = ss(A_obs, B_obs, C_obs, D_obs);
 
-pzmap(sys_obs)
+% pzmap(sys_obs)
 %% =====================================================================
 %  2) OBSERVADOR DE ORDEM REDUZIDA (Método de Friedland)
 %  =====================================================================
@@ -85,6 +86,7 @@ fprintf('cond(obsv(A22,A12)) = %.3e   (se >> 1e6, o ganho J tende a crescer)\n',
 
 % Ganho J via LQE no sistema fictício (A22', A12')
 Qe_red = 35 * eye(n_states - n_outputs);   % "ruído de processo"  — subir = mais rápido
+Qe_red = 8000 * eye(n_states - n_outputs);
 Re_red = eye(n_outputs);              % "ruído de medição"   — subir = mais lento
 J = lqr(A22', A12', Qe_red, Re_red).';
 
@@ -155,7 +157,11 @@ sys_err_pp = ss(A_obs, zeros(n_states,1), eye(n_states), zeros(n_states,1));
 % [x0_real; z0]  com z0 = V*x0_hat - J*C*x0_hat = 0 (pois x0_hat = 0)
 sys_aug_open = ss(A_aug_red, zeros(2*n_states - n_outputs, 1), ...
                   eye(2*n_states - n_outputs), zeros(2*n_states - n_outputs, 1));
-[X_aug, ~] = initial(sys_aug_open, [x0_real; zeros(n_states - n_outputs, 1)], t_sim);
+
+z0 = build_z0(zeros(n_states - n_outputs, 1), x0_real);
+[X_aug, ~] = initial(sys_aug_open, [x0_real; z0], t_sim);
+
+% [X_aug, ~] = initial(sys_aug_open, [x0_real; zeros(n_states - n_outputs, 1)], t_sim);
 
 x_real   = X_aug(:, 1:n_states);
 z_red    = X_aug(:, n_states+1:end);
@@ -192,3 +198,168 @@ legend('Obs identidade (n=5)', 'Obs Reduzido (n=3)', 'Location', 'best');
 axis equal;
 
 
+
+%% =====================================================================
+%  3) ANÁLISE DE CONVERGÊNCIA E SEPARAÇÃO DE POLOS - v2
+%  =====================================================================
+t_sim = 0 : 1e-3 : 2; % Janela de simulação de 2 segundos
+
+% --- 3.1) TABELA COMPARATIVA DE POLOS (PRINCÍPIO DA SEPARAÇÃO) ---
+poles_control = poles_cl; % Seus polos de malha fechada vindos do LQR/PP
+poles_obs_full = eig(A - L*C);
+poles_obs_red  = eig(F_red);
+
+fprintf('\n===================================================================\n');
+fprintf('        TABELA COMPARATIVA DE POLOS DO SISTEMA GLOBAL \n');
+fprintf('===================================================================\n');
+fprintf(' Modo |   Controlador (MF)    |   Obs. Completo   |   Obs. Reduzido   \n');
+fprintf('-------------------------------------------------------------------\n');
+for i = 1:5
+    str_ctrl = sprintf('%+6.2f %+6.2fi', real(poles_control(i)), imag(poles_control(i)));
+    str_full = sprintf('%+6.2f %+6.2fi', real(poles_obs_full(i)), imag(poles_obs_full(i)));
+    
+    if i <= 3
+        str_red = sprintf('%+6.2f %+6.2fi', real(poles_obs_red(i)), imag(poles_obs_red(i)));
+        fprintf('  %d   | %-21s | %-17s | %-17s \n', i, str_ctrl, str_full, str_red);
+    else
+        fprintf('  %d   | %-21s | %-17s | %-17s \n', i, str_ctrl, str_full, '       -       ');
+    end
+end
+fprintf('===================================================================\n\n');
+
+
+% --- 3.2) CONVERGÊNCIA DOS ESTADOS: PLANTA VS ESTIMADO ---
+% Estado inicial REAL da planta (paciente fora do equilíbrio com velocidades)
+x0_real = [0.05; 0.02; 1; 3; 2];
+
+% Estado inicial estimado pelo computador (só conhece as posições pelos sensores)
+x0_hat = [0.05; 0.02; 0; 0; 0]; 
+e0 = x0_real - x0_hat;
+
+% Simulação do erro do observador cheio para reconstruir seu xhat
+sys_err_pp = ss(A_obs, zeros(n_states,1), eye(n_states), zeros(n_states,1));
+[e_pp, ~] = initial(sys_err_pp, e0, t_sim);
+
+% Correção da inicialização do estado z do observador reduzido
+z0 = build_z0(zeros(n_states - n_outputs, 1), x0_real);
+
+% Simulação do sistema aumentado em Malha Aberta (u=0, w=0)
+sys_aug_open = ss(A_aug_red, zeros(2*n_states - n_outputs, 1), ...
+                  eye(2*n_states - n_outputs), zeros(2*n_states - n_outputs, 1));
+[X_aug, ~] = initial(sys_aug_open, [x0_real; z0], t_sim);
+
+% Separação dos estados reais e estimados
+x_real   = X_aug(:, 1:n_states);
+xhat_red = (recover_xhat * X_aug.').';
+xhat_pp  = x_real - e_pp; % Reconstrução matemática do xhat do observador cheio
+
+% Nomes para formatação dos gráficos dinâmicos
+state_labels = {'Posicao q2 (rad)', 'Posicao q3 (m)', 'Velocidade dq1 (rad/s)', 'Velocidade dq2 (rad/s)', 'Velocidade dq3 (m/s)'};
+short_names  = {'q2', 'q3', 'dq1', 'dq2', 'dq3'};
+
+for k = 1:n_states
+    figure('Name', ['Convergencia de Estado - ' short_names{k}], 'Color', 'w');
+    plot(t_sim, x_real(:, k),   'r-.',  'LineWidth', 2.5); hold on;
+    plot(t_sim, xhat_pp(:, k),  'b--', 'LineWidth', 1.5);
+    plot(t_sim, xhat_red(:, k), 'g-', 'LineWidth', 1.5);
+    grid on;
+    xlabel('Tempo (s)'); ylabel(state_labels{k});
+    title(['Rastreamento e Convergencia do Estado: ' short_names{k}]);
+    legend('Planta Real', 'Obs Ordem Completa', 'Obs Reduzido', 'Location', 'best');
+end
+
+
+% --- 3.3) MAPA GLOBAL DE POLOS EXPANDIDO ---
+figure('Name', 'Mapa Global de Polos do Sistema', 'Color', 'w');
+hold on; grid on;
+plot(real(poles_control), imag(poles_control), 'rx', 'MarkerSize', 10, 'LineWidth', 2);
+plot(real(poles_obs_full), imag(poles_obs_full), 'bs', 'MarkerSize', 8, 'LineWidth', 1.5);
+plot(real(poles_obs_red), imag(poles_obs_red), 'g+', 'MarkerSize', 8, 'LineWidth', 1.5);
+xline(0, 'k--'); yline(0, 'k--');
+xlabel('Eixo Real (1/s)'); ylabel('Eixo Imaginario (1/s)');
+title('Mapa de Polos Global: Princípio da Separação');
+legend('Controlador (Malha Fechada)', 'Obs Ordem Completa (n=5)', 'Obs Reduzido (n=3)', 'Location', 'best');
+
+
+
+
+%% =====================================================================
+%  CENÁRIO: SIMULAÇÃO EM MALHA FECHADA COMPLETA (LQR + OBS REDUZIDO)
+%  =====================================================================
+disp('==================================================');
+disp(' INICIANDO SIMULAÇÃO EM MALHA FECHADA COMPLETA... ');
+disp('==================================================');
+
+% 1. Construção das Matrizes do Sistema Aumentado em Malha Fechada
+% Combinando a dinâmica da planta real com a lei de controle u = -K_lqr * x_hat
+A_cl_total = [ (A - B * K_lqr * S_red * C),            (-B * K_lqr * N);
+               (G_red * C - H_red * K_lqr * S_red * C), (F_red - H_red * K_lqr * N) ];
+
+% Entrada de perturbação: o sinal w entra apenas na planta física
+B_cl_total = [ E; 
+               zeros(n_states - n_outputs, size(E, 2)) ];
+
+% Matriz C auxiliar para extrair todas as variáveis de estado do bloco ss
+C_cl_total = eye(2 * n_states - n_outputs);
+D_cl_total = zeros(2 * n_states - n_outputs, 1);
+
+% Instanciação do sistema global de Malha Fechada
+sys_cl_total = ss(A_cl_total, B_cl_total, C_cl_total, D_cl_total);
+
+% 2. Configuração do Tempo e do Distúrbio Respiratório Senoidal
+t_sim2 = 0 : 0.001 : 5;
+f_respiracao = 0.5;    % 30 respirações por minuto
+omega_w = 2 * pi * f_respiracao;
+w_senoidal = 0.005 * sin(omega_w * t_sim2); % 5 mm de amplitude da respiração
+
+% 3. Condições Iniciais Corretas (Planta desalinhada e Observador no escuro)
+x0_real = [0.05; 0.02; 1; 3; 2]; 
+z0_correto = build_z0(zeros(n_states - n_outputs, 1), x0_real);
+x0_cl_total = [x0_real; z0_correto];
+
+% 4. Execução da Simulação Temporal Combinada (Tranco + Respiração Contínua)
+[X_cl_total, ~] = lsim(sys_cl_total, w_senoidal, t_sim2, x0_cl_total);
+
+% Separação dos Estados Reais e dos Estados do Observador
+x_real_sim2 = X_cl_total(:, 1:n_states);
+z_sim2      = X_cl_total(:, n_states+1:end);
+
+% Reconstrução das variáveis estimadas (x_hat) e dos esforços (u) no tempo
+x_hat_sim2 = zeros(length(t_sim2), n_states);
+u_sim2     = zeros(length(t_sim2), n_inputs);
+
+for i = 1:length(t_sim2)
+    % Reconstrói o vetor x_hat usando a equação de saída do observador reduzido
+    x_hat_sim2(i, :) = (S_red * C * x_real_sim2(i, :)' + N * z_sim2(i, :)')';
+    
+    % Calcula o torque real injetado nas juntas: u = -K * x_hat
+    u_sim2(i, :) = (-K_lqr * x_hat_sim2(i, :)')';
+end
+
+% =====================================================================
+%  GERAÇÃO DOS GRÁFICOS
+%  =====================================================================
+
+% --- GRÁFICO 1: COMPORTAMENTO DAS POSIÇÕES DAS JUNTAS ---
+figure('Name', 'Malha Fechada Completa: Posicoes das Juntas', 'Color', 'w');
+
+subplot(2,1,1);
+plot(t_sim2, x_real_sim2(:,1), 'b', 'LineWidth', 2); grid on;
+title('Resposta da Junta q2 (Elevacao) com Controle via Estado Estimado');
+ylabel('Posicao Real (rad)');
+
+subplot(2,1,2);
+plot(t_sim2, x_real_sim2(:,2), 'b', 'LineWidth', 2); grid on;
+title('Resposta da Junta q3 (Insercao) com Controle via Estado Estimado');
+xlabel('Tempo (s)'); ylabel('Posicao Real (m)');
+
+% --- GRÁFICO 2: COMPORTAMENTO DOS ESFORÇOS DE CONTROLE REALISTAS ---
+figure('Name', 'Malha Fechada Completa: Esforcos de Controle', 'Color', 'w');
+plot(t_sim2, u_sim2(:,1), 'b', 'LineWidth', 2); hold on;
+plot(t_sim2, u_sim2(:,2), 'r', 'LineWidth', 2);
+plot(t_sim2, u_sim2(:,3), 'g', 'LineWidth', 2); grid on;
+title('Esforco de Controle dos Motores (Realimentacao por Observador Reduzido)');
+xlabel('Tempo (s)'); ylabel('Torque (Nm) / Forca (N)');
+legend('tau1 (Base)', 'tau2 (Elevacao)', 'F3 (Insercao)', 'Location', 'best');
+
+disp('=> Simulação do Cenário 2 concluída e gráficos gerados!');

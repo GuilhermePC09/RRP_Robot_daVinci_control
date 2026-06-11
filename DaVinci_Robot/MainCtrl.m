@@ -30,7 +30,7 @@ n_states = size(A, 1);
 n_inputs = size(B, 2);
 n_outputs = size(C, 1);
 
-ControlAnalysis(A, B, C, D);
+% ControlAnalysis(A, B, C, D);
 
 %% ====================
 %  1) CONTROLE POR LQR
@@ -76,7 +76,7 @@ disp('Polos em malha fechada:');
 disp(poles_cl);
 
 disp('Processando análises em malha fechada para LQR...');
-AnalyzeCL(A, B, C, D, E, K_lqr, 'LQR');
+% AnalyzeCL(A, B, C, D, E, K_lqr, 'LQR');
 
 %% ==================================
 %  2) CONTROLE POR ALOCAÇÃO DE POLOS
@@ -102,7 +102,7 @@ disp('Matriz de ganhos F calculada:');
 disp(F_pp);
 
 disp('Processando análises em malha fechada para alocação de polos...');
-AnalyzeCL(A, B, C, D, E, F_pp, 'PP');
+% AnalyzeCL(A, B, C, D, E, F_pp, 'PP');
 
 
 %% ====================================
