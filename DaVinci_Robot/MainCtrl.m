@@ -96,6 +96,40 @@ disp(F_pp);
 % disp('Processando análises em malha fechada para alocação de polos...');
 % AnalyzeCL(A, B, C, D, E, F_pp, 'PP');
 
+%% RESPOSTA EM FREQUÊNCIA (BODE / SIGMA)
+
+% Sistemas em malha aberta e malha fechada para comparação
+sys_ol     = ss(A,            B, C, D);
+sys_cl_lqr = ss(A - B*K_lqr, B, C, D);
+sys_cl_pp  = ss(A - B*F_pp,  B, C, D);
+
+% --- Sigma plot: visão MIMO global ---
+figure('Name', 'Resposta em Frequencia: Valores Singulares (MIMO)', 'Color', 'w');
+sigma(sys_ol,     'k--', sys_cl_lqr, 'b-', sys_cl_pp, 'r-');
+grid on;
+title('Resposta em Frequencia — Valores Singulares (Comparativo)');
+xlabel('Frequencia (rad/s)'); ylabel('Ganho (dB)');
+legend('Malha Aberta', 'Malha Fechada LQR', 'Malha Fechada PP', 'Location', 'best');
+
+% --- Bode por canal de saída ---
+bode_out_names = {'q_2 (Elevacao)', 'q_3 (Insercao)'};
+bode_in_names  = {'tau1 (Base)', 'tau2 (Elevacao)', 'F3 (Insercao)'};
+
+for out_idx = 1:n_outputs
+    figure('Name', ['Bode — Saida ' bode_out_names{out_idx}], 'Color', 'w');
+    for in_idx = 1:n_inputs
+        subplot(n_inputs, 1, in_idx);
+        bode(sys_ol(out_idx, in_idx),     'k--', ...
+             sys_cl_lqr(out_idx, in_idx), 'b-',  ...
+             sys_cl_pp(out_idx, in_idx),  'r-');
+        grid on;
+        title(['Saida: ' bode_out_names{out_idx} '   |   Entrada: ' bode_in_names{in_idx}]);
+        if in_idx == 1
+            legend('Malha Aberta', 'LQR', 'PP', 'Location', 'best');
+        end
+    end
+end
+
 %% FULL-ORDER OBSERVER - IDENTITY
 
 % LQR approach
@@ -314,6 +348,59 @@ title('Esforco de Controle dos Motores (Realimentacao por Observador Reduzido)')
 xlabel('Tempo (s)'); ylabel('Torque (Nm) / Forca (N)');
 legend('tau1 (Base)', 'tau2 (Elevacao)', 'F3 (Insercao)', 'Location', 'best');
 
+% --- PLOT 3: ESTADO REAL vs ESTIMADO — POSIÇÕES ---
+figure('Name', 'Regulador: Estados Reais vs Estimados (Posicoes)', 'Color', 'w');
+
+subplot(2,1,1);
+plot(t_sim2, x_real_sim2(:,1), 'b-',  'LineWidth', 2); hold on;
+plot(t_sim2, x_hat_sim2(:,1),  'r--', 'LineWidth', 1.5); grid on;
+title('q_2 (Elevacao) — Real vs Estimado pelo Obs. Reduzido');
+ylabel('Posicao (rad)');
+legend('Real', 'Estimado', 'Location', 'best');
+
+subplot(2,1,2);
+plot(t_sim2, x_real_sim2(:,2), 'b-',  'LineWidth', 2); hold on;
+plot(t_sim2, x_hat_sim2(:,2),  'r--', 'LineWidth', 1.5); grid on;
+title('q_3 (Insercao) — Real vs Estimado pelo Obs. Reduzido');
+xlabel('Tempo (s)'); ylabel('Posicao (m)');
+
+% --- PLOT 4: ESTADO REAL vs ESTIMADO — VELOCIDADES ---
+figure('Name', 'Regulador: Estados Reais vs Estimados (Velocidades)', 'Color', 'w');
+vel_names_cl   = {'dq_1 (rad/s)', 'dq_2 (rad/s)', 'dq_3 (m/s)'};
+vel_ylabels_cl = {'Vel. (rad/s)', 'Vel. (rad/s)', 'Vel. (m/s)'};
+
+for k = 3:5
+    subplot(3,1,k-2);
+    plot(t_sim2, x_real_sim2(:,k), 'b-',  'LineWidth', 2); hold on;
+    plot(t_sim2, x_hat_sim2(:,k),  'r--', 'LineWidth', 1.5); grid on;
+    title([vel_names_cl{k-2} ' — Real vs Estimado pelo Obs. Reduzido']);
+    ylabel(vel_ylabels_cl{k-2});
+    if k == 5, xlabel('Tempo (s)'); end
+    if k == 3, legend('Real', 'Estimado', 'Location', 'best'); end
+end
+
+% --- PLOT 5: DERIVADA DO ESFORÇO DE CONTROLE (du/dt) ---
+dt_sim2 = t_sim2(2) - t_sim2(1);
+du_sim2 = diff(u_sim2) / dt_sim2;
+t_du2   = t_sim2(1:end-1);
+
+figure('Name', 'Regulador: Taxa de Variacao do Esforco de Controle', 'Color', 'w');
+
+subplot(3,1,1);
+plot(t_du2, du_sim2(:,1), 'b', 'LineWidth', 1.5); grid on;
+title('du/dt — tau1 (Base)');
+ylabel('d\tau_1/dt  (Nm/s)');
+
+subplot(3,1,2);
+plot(t_du2, du_sim2(:,2), 'r', 'LineWidth', 1.5); grid on;
+title('du/dt — tau2 (Elevacao)');
+ylabel('d\tau_2/dt  (Nm/s)');
+
+subplot(3,1,3);
+plot(t_du2, du_sim2(:,3), 'g', 'LineWidth', 1.5); grid on;
+title('du/dt — F3 (Insercao)');
+xlabel('Tempo (s)'); ylabel('dF_3/dt  (N/s)');
+
 disp('=> Simulação do Cenário 2 concluída e gráficos gerados!');
 
 
@@ -425,9 +512,49 @@ plot(t_sim, u_seg(:,3), 'g', 'LineWidth', 2); grid on;
 ylabel('Forca de Insercao (N)');
 set(gca, 'YColor', 'k');
 grid on;
-title('Esforco de Controle dos Motores no Rastreamento LQ');
+title('Seguidor LQ: Esforco de Controle dos Motores');
 xlabel('Tempo (s)');
 legend('tau1 (Base)', 'tau2 (Elevacao)', 'F3 (Insercao)', 'Location', 'best');
+
+% Derivada do esforço — Seguidor LQ
+dt_lqt   = t_sim(2) - t_sim(1);
+du_lqt   = diff(u_seg) / dt_lqt;
+t_du_lqt = t_sim(1:end-1);
+
+figure('Name', 'Seguidor LQ: Taxa de Variacao do Esforco de Controle', 'Color', 'w');
+
+subplot(3,1,1);
+plot(t_du_lqt, du_lqt(:,1), 'b', 'LineWidth', 1.5); grid on;
+title('du/dt — tau1 (Base) — Seguidor LQ');
+ylabel('d\tau_1/dt  (Nm/s)');
+
+subplot(3,1,2);
+plot(t_du_lqt, du_lqt(:,2), 'r', 'LineWidth', 1.5); grid on;
+title('du/dt — tau2 (Elevacao) — Seguidor LQ');
+ylabel('d\tau_2/dt  (Nm/s)');
+
+subplot(3,1,3);
+plot(t_du_lqt, du_lqt(:,3), 'g', 'LineWidth', 1.5); grid on;
+title('du/dt — F3 (Insercao) — Seguidor LQ');
+xlabel('Tempo (s)'); ylabel('dF_3/dt  (N/s)');
+
+% Estado real vs estimado — Seguidor LQ (posições)
+figure('Name', 'Seguidor LQ: Estados Reais vs Estimados (Posicoes)', 'Color', 'w');
+
+subplot(2,1,1);
+plot(t_sim, y_ref(:,1),    'r--', 'LineWidth', 1.5); hold on;
+plot(t_sim, x_real(:,1),   'b-',  'LineWidth', 2);
+plot(t_sim, x_hat(:,1),    'g-',  'LineWidth', 1.2); grid on;
+title('q_2 (Elevacao) — Referencia, Real e Estimado — Seguidor LQ');
+ylabel('Posicao (rad)');
+legend('Referencia', 'Real', 'Estimado', 'Location', 'best');
+
+subplot(2,1,2);
+plot(t_sim, y_ref(:,2),    'r--', 'LineWidth', 1.5); hold on;
+plot(t_sim, x_real(:,2),   'b-',  'LineWidth', 2);
+plot(t_sim, x_hat(:,2),    'g-',  'LineWidth', 1.2); grid on;
+title('q_3 (Insercao) — Referencia, Real e Estimado — Seguidor LQ');
+xlabel('Tempo (s)'); ylabel('Posicao (m)');
 
 
 % ------ FUNÇÕES AUXILIARES DA DINÂMICA ------
@@ -496,8 +623,6 @@ function dX = forward_sim_rhs(t, X, A, B, C, E, F_red, G_red, H_red, S_red, N, R
     
     dX = [dx; dz];
 end
-
-
 
 %% ANÁLISE ESTATÍSTICA E POLOS DE MALHA FECHADA
 
@@ -648,7 +773,7 @@ xlabel('Tempo (s)'); ylabel('Posicao (m)');
 legend('Referencia da EDO', 'Resposta Real', 'Location', 'best');
 
 % --- GRÁFICO DE ESFORÇO ---
-figure('Name', 'Esforco de Controle (Modelo Estendido)', 'Color', 'w');
+figure('Name', 'Modelo Assumido: Esforco de Controle dos Motores', 'Color', 'w');
 yyaxis left
 plot(t_sim, u_seg(:,1), 'b', 'LineWidth', 2); hold on;
 plot(t_sim, u_seg(:,2), 'r', 'LineWidth', 2);
@@ -658,5 +783,50 @@ yyaxis right
 plot(t_sim, u_seg(:,3), 'g', 'LineWidth', 2);
 ylabel('Forca de Insercao (N)'); set(gca, 'YColor', 'k');
 grid on; xlabel('Tempo (s)');
-title('Esforco de Controle dos Motores (Abordagem de Duas Escalas)');
+title('Modelo Assumido: Esforco de Controle dos Motores');
 legend('tau1 (Base)', 'tau2 (Elevacao)', 'F3 (Insercao)', 'Location', 'best');
+
+% Derivada do esforço — Modelo Assumido
+dt_ma   = t_sim(2) - t_sim(1);
+du_ma   = diff(u_seg) / dt_ma;
+t_du_ma = t_sim(1:end-1);
+
+figure('Name', 'Modelo Assumido: Taxa de Variacao do Esforco de Controle', 'Color', 'w');
+
+subplot(3,1,1);
+plot(t_du_ma, du_ma(:,1), 'b', 'LineWidth', 1.5); grid on;
+title('du/dt — tau1 (Base) — Modelo Assumido');
+ylabel('d\tau_1/dt  (Nm/s)');
+
+subplot(3,1,2);
+plot(t_du_ma, du_ma(:,2), 'r', 'LineWidth', 1.5); grid on;
+title('du/dt — tau2 (Elevacao) — Modelo Assumido');
+ylabel('d\tau_2/dt  (Nm/s)');
+
+subplot(3,1,3);
+plot(t_du_ma, du_ma(:,3), 'g', 'LineWidth', 1.5); grid on;
+title('du/dt — F3 (Insercao) — Modelo Assumido');
+xlabel('Tempo (s)'); ylabel('dF_3/dt  (N/s)');
+
+% Estado real vs estimado — Modelo Assumido (posições)
+x_hat_ma = zeros(length(t_sim), n_states);
+for i = 1:length(t_sim)
+    x_hat_ma(i, :) = (S_red * C * X_out(i, 1:5)' + N * X_out(i, 6:8)')';
+end
+
+figure('Name', 'Modelo Assumido: Estados Reais vs Estimados (Posicoes)', 'Color', 'w');
+
+subplot(2,1,1);
+plot(t_sim, q2_ref,          'r--', 'LineWidth', 1.5); hold on;
+plot(t_sim, q2_real,         'b-',  'LineWidth', 2);
+plot(t_sim, x_hat_ma(:,1),   'g-',  'LineWidth', 1.2); grid on;
+title('q_2 (Elevacao) — Referencia, Real e Estimado — Modelo Assumido');
+ylabel('Posicao (rad)');
+legend('Referencia', 'Real', 'Estimado', 'Location', 'best');
+
+subplot(2,1,2);
+plot(t_sim, q3_ref,          'r--', 'LineWidth', 1.5); hold on;
+plot(t_sim, q3_real,         'b-',  'LineWidth', 2);
+plot(t_sim, x_hat_ma(:,2),   'g-',  'LineWidth', 1.2); grid on;
+title('q_3 (Insercao) — Referencia, Real e Estimado — Modelo Assumido');
+xlabel('Tempo (s)'); ylabel('Posicao (m)');
