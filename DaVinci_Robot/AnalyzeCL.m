@@ -47,7 +47,7 @@ plot(t, y_ma_init(:,1), 'r--', 'LineWidth', 1.5); hold on;
 plot(t, y_cl_init(:,1), 'b', 'LineWidth', 2); grid on;
 title(['Regulação da junta q_2 | Resposta à condição inicial (' controller_name ')']);
 ylabel('Desvio angular (rad)');
-legend('MA', 'MF');
+legend('MA', 'MF', 'Location', 'best');
 
 subplot(2,1,2);
 plot(t, y_ma_init(:,2), 'r--', 'LineWidth', 1.5); hold on;
@@ -62,13 +62,18 @@ for idx = 1:length(t)
 end
 
 figure('Name', ['Esforco de Controle - Reg. Inicial - ' controller_name], 'Color', 'w');
-plot(t, u_init(:,1), 'b', 'LineWidth', 2); hold on;
-plot(t, u_init(:,2), 'r', 'LineWidth', 2);
-plot(t, u_init(:,3), 'g', 'LineWidth', 2); grid on;
+yyaxis left
+plot(t, u_init(:,1), 'b-', 'LineWidth', 2); hold on;
+plot(t, u_init(:,2), 'r-', 'LineWidth', 2);
+ylabel('Torque dos motores (Nm)');
+set(gca, 'YColor', 'k');
+yyaxis right
+plot(t, u_init(:,3), 'g-', 'LineWidth', 2); grid on;
+ylabel('Força de inserção (N)');
+set(gca, 'YColor', 'k');
 title(['Esforço de controle do regulador (' controller_name ')']);
-xlabel('Tempo (s)'); ylabel('Torque (Nm) / Força (N)');
-legend('\tau_1', '\tau_2', 'F_3');
-
+xlabel('Tempo (s)');
+legend('\tau_1', '\tau_2', 'F_3', 'Location', 'best');
 
 
 %  3) SINUSOIDAL DISTURBANCE SCENARIO
@@ -110,12 +115,18 @@ for idx = 1:length(t)
 end
 
 figure('Name', ['Esforco de Controle - Dist. Respiratorio - ' controller_name], 'Color', 'w');
-plot(t, u_dist(:,1), 'b', 'LineWidth', 2); hold on;
-plot(t, u_dist(:,2), 'r', 'LineWidth', 2);
-plot(t, u_dist(:,3), 'g', 'LineWidth', 2); grid on;
+yyaxis left
+plot(t, u_dist(:,1), 'b-', 'LineWidth', 2); hold on;
+plot(t, u_dist(:,2), 'r-', 'LineWidth', 2);
+ylabel('Torque dos motores (Nm)');
+set(gca, 'YColor', 'k');
+yyaxis right
+plot(t, u_dist(:,3), 'g-', 'LineWidth', 2); grid on;
+ylabel('Força de inserção (N)');
+set(gca, 'YColor', 'k');
 title(['Esforço de controle sob perturbação (' controller_name ')']);
-xlabel('Tempo (s)'); ylabel('Torque (Nm) / Força (N)');
-legend('\tau_1', '\tau_2', 'F_3');
+xlabel('Tempo (s)');
+legend('\tau_1', '\tau_2', 'F_3', 'Location', 'best');
 
 
 %  4) CLOSED-LOOP BODE DIAGRAM

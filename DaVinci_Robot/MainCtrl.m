@@ -34,11 +34,11 @@ n_outputs = size(C, 1);
 
 % Definition of maximum tolerable limits (Bryson's approach)
 err_q2_max = 0.001;  % 0.001 rad of tolerable error
-err_q3_max = 0.001;  % 0.001 m (1 mm) of tolerable error
+err_q3_max = 0.0001;  % 0.0001 m (0.1 mm) of tolerable error
 
-err_dq1_max = 0.1;   % 0.1 rad/s tolerable
-err_dq2_max = 0.1;   % 0.1 rad/s tolerable
-err_dq3_max = 0.01;   % 0.1 m/s tolerable
+err_dq1_max = 0.5;   % 0.5 rad/s tolerable
+err_dq2_max = 0.5;   % 0.5 rad/s tolerable
+err_dq3_max = 0.5;   % 0.5 m/s tolerable
 
 % Definition of actuator effort (Motor Capacity)
 tau1_max = 5.3;  
@@ -50,13 +50,11 @@ Q_lqr = diag([1/err_q2_max^2, 1/err_q3_max^2, ...
               1/err_dq1_max^2, 1/err_dq2_max^2, 1/err_dq3_max^2]);
 
 % R matrix (3x3 for the 3 actuators)
-R_lqr = diag([tau1_max*10, tau2_max*5, f3_max/10]);
-% R_lqr = diag([tau1_max*10, tau2_max*10, f3_max/10]);
-% R_lqr = diag([1e2, 1e2, 1e1]);
+R_lqr = diag([tau1_max*10, tau2_max*5, f3_max/100]);
 
-disp('==============================');
-disp(' PARÂMETROS DE CONTROLE - LQR ');
-disp('==============================');
+disp('========================================');
+disp(' PARÂMETROS DE CONTROLE - REGULADOR LQR ');
+disp('========================================');
 
 disp('Matriz de penalidade Q:');
 disp(Q_lqr);
@@ -71,7 +69,7 @@ disp(K_lqr);
 disp('Polos em malha fechada:');
 disp(poles_cl);
 
-disp('Processando análises em malha fechada para LQR...');
+% disp('Processando análises em malha fechada para LQR...');
 % AnalyzeCL(A, B, C, D, E, K_lqr, 'LQR');
 
 %% POLE PLACEMENT CONTROL
@@ -80,11 +78,11 @@ disp('Processando análises em malha fechada para LQR...');
 % ctrl_poles = poles_cl';
 
 % Surgical damping strategy (Butterworth in tissue + Real at joints)
-ctrl_poles = [-5, -7 + 3i, -7 - 3i, -18 + 12i, -18 - 12i];
+ctrl_poles = [-5, -7 + 4i, -7 - 4i, -40 + 20i, -40 - 20i];
 
-disp('============================================');
-disp(' PARÂMETROS DE CONTROLE - ALOCAÇÃO DE POLOS ');
-disp('============================================');
+disp('=======================================');
+disp(' PARÂMETROS DE CONTROLE - REGULADOR PP');
+disp('=======================================');
 disp('Polos desejados para a malha fechada:');
 disp(ctrl_poles');
 
@@ -95,14 +93,13 @@ F_pp = place(A, B, ctrl_poles);
 disp('Matriz de ganhos F calculada:');
 disp(F_pp);
 
-disp('Processando análises em malha fechada para alocação de polos...');
+% disp('Processando análises em malha fechada para alocação de polos...');
 % AnalyzeCL(A, B, C, D, E, F_pp, 'PP');
-
 
 %% FULL-ORDER OBSERVER - IDENTITY
 
 % LQR approach
-Wc = 5000 * eye(n_states); % "process noise"  — increase = faster observer
+Wc = 1000 * eye(n_states); % "process noise"  — increase = faster observer
 Vc = eye(n_outputs);    % "measurement noise"  — increase = slower observer
 L = lqr(A', C', Wc, Vc).';
 
@@ -110,8 +107,13 @@ L = lqr(A', C', Wc, Vc).';
 % poles_obs_id = [-30+8i,-30+8i, -20, -25+2i, -25-2i];
 % L = place(A',C',poles_obs_id)';
 
-fprintf('Ganho do observador L:\n'); disp(L);
-fprintf('Autovalores de (A - L*C):\n'); disp(eig(A - L*C).');
+disp('================================================');
+disp(' PARÂMETROS DE CONTROLE - OBSERVADOR IDENTIDADE ');
+disp('================================================');
+
+fprintf('Polos do observador (autovalores de (A - L*C)):\n'); disp(eig(A - L*C));
+fprintf('Matriz de ganhos do observador (L):\n'); disp(L);
+
 
 % Isolated observer system (inputs = [u; y], output = x_hat)
 A_obs = A - L * C;
@@ -143,6 +145,10 @@ A22 = V_mat * A * N;   % (n-m) x (n-m)
 B1  = C     * B;       % m     x n_inputs
 B2  = V_mat * B;       % (n-m) x n_inputs
 
+disp('===================================================');
+disp(' PARÂMETROS DE CONTROLE - OBSERVADOR ORD. REDUZIDA ');
+disp('===================================================');
+
 % Observability and conditioning of the reduced pair (A22, A12)
 rank_obs_red = rank(obsv(A22, A12));
 fprintf('Posto da observabilidade reduzida = %d (necessario n-m = %d)\n', ...
@@ -150,11 +156,11 @@ fprintf('Posto da observabilidade reduzida = %d (necessario n-m = %d)\n', ...
 if rank_obs_red < n_states - n_outputs
     error('Par (A22, A12) NAO observavel: observador reduzido nao realizavel.');
 end
-fprintf('cond(obsv(A22,A12)) = %.3e   (se >> 1e6, o ganho J tende a crescer)\n', ...
+fprintf('cond(obsv(A22,A12)) = %.3e   (se >> 1e6, o ganho J tende a crescer)\n\n', ...
         cond(obsv(A22, A12)));
 
 % Gain J via LQE in the fictitious system (A22', A12')
-Qe_red = 8000 * eye(n_states - n_outputs); % "process noise"  — increase = faster
+Qe_red = 1000 * eye(n_states - n_outputs); % "process noise"  — increase = faster
 Re_red = eye(n_outputs);              % "measurement noise"  — increase = slower
 J = lqr(A22', A12', Qe_red, Re_red).';
 
@@ -167,8 +173,8 @@ G_red = A21 - J * A11 + F_red * J;
 H_red = B2  - J * B1;
 S_red = M   + N * J;
 
-fprintf('Polos do observador reduzido (eig F):\n'); disp(eig(F_red).');
-fprintf('norm(J) = %.3e\n', norm(J));
+fprintf('Polos do observador reduzido (eig F):\n'); disp(eig(F_red));
+fprintf('norm(J) = %.3e\n\n', norm(J));
 
 % Augmented system [x; z] in open loop
 
@@ -227,7 +233,7 @@ obs_red.J            = J;
 state_labels  = {'Posicao q2 (rad)','Posicao q3 (m)', ...
            'Velocidade dq1 (rad/s)','Velocidade dq2 (rad/s)','Velocidade dq3 (m/s)'};
 x0_real = [0.05; 0.02; 1; 3; 2];
-x0_hat  = [0.05; 0.02; 0; 0; 0];
+x0_hat  = [0; 0; 0; 0; 0];
 
 AnalyseCL_Obsv(A, C, L, obs_red, poles_cl, x0_real, t_sim, state_labels, x0_hat)
 
@@ -255,15 +261,15 @@ D_cl_total = zeros(2 * n_states - n_outputs, 1);
 sys_cl_total = ss(A_cl_total, B_cl_total, C_cl_total, D_cl_total);
 
 % 2. Time Configuration and Sinusoidal Respiratory Disturbance
-t_sim2 = 0 : 0.001 : 5;
+t_sim2 = 0 : 0.001 : 2;
 f_respiracao = 0.5;    % 30 breaths per minute
 omega_w = 2 * pi * f_respiracao;
 w_senoidal = 0.005 * sin(omega_w * t_sim2); % 5 mm breathing amplitude
 
 % 3. Correct Initial Conditions (Misaligned plant and Observer in the dark)
 x0_real = [0.05; 0.02; 1; 3; 2]; 
-z0_correto = build_z0(zeros(n_states - n_outputs, 1), x0_real);
-x0_cl_total = [x0_real; z0_correto];
+z0 = build_z0(zeros(n_states - n_outputs, 1), x0_real);
+x0_cl_total = [x0_real; z0];
 
 % 4. Execution of the Combined Time Simulation (Jolt + Continuous Breathing)
 [X_cl_total, ~] = lsim(sys_cl_total, w_senoidal, t_sim2, x0_cl_total);
@@ -309,3 +315,348 @@ xlabel('Tempo (s)'); ylabel('Torque (Nm) / Forca (N)');
 legend('tau1 (Base)', 'tau2 (Elevacao)', 'F3 (Insercao)', 'Location', 'best');
 
 disp('=> Simulação do Cenário 2 concluída e gráficos gerados!');
+
+
+%% SEGUIDOR VIA LQ (HORIZONTE FINITO)
+
+% Configurações Iniciais de Custo e Tempo
+Q_seg = Q_lqr;             % Peso de rastreamento (mesmo do LQR)
+R_seg = R_lqr;             % Peso dos motores (mesmo do LQR)
+Q1 = 1 * Q_seg;           % Penalidade do estado terminal (igualmente escalada)
+
+t_f = 5.0;                 % Horizonte de tempo final da cirurgia (2 segundos)
+t_span_prog = 0 : 0.001 : t_f; 
+t_span_back = [t_f, 0];    % Intervalo para integração retroativa
+
+% Pré-cálculo da matriz de acoplamento de entrada
+Ri = inv(R_seg);
+BRiBt = B * Ri * B';       % Dimensão (n_states x n_states)
+
+% Integração Retroativa da EDO de Riccati (P)
+disp('=> Resolvendo EDO de Riccati retroativa...');
+P1_flat = Q1(:); % Achata a matriz terminal 5x5 em um vetor 25x1
+options = odeset('RelTol', 1e-6, 'AbsTol', 1e-8);
+
+[t_P, P_flat_sol] = ode45(@(t, P_flat) riccati_rhs(t, P_flat, A, BRiBt, Q_seg), t_span_back, P1_flat, options);
+
+% Inverte os resultados para a ordem cronológica correta (0 -> t_f)
+t_P = flipud(t_P);
+P_flat_sol = flipud(P_flat_sol);
+
+% Integração Retroativa da EDO do Co-Estado (eta)
+disp('=> Resolvendo EDO do co-estado retroativa...');
+x_ref_tf = daVinci_ref(t_f);
+eta1 = Q1 * x_ref_tf; % Condição final do co-estado
+
+[t_eta, eta_sol] = ode45(@(t, eta) eta_rhs(t, eta, A, BRiBt, Q_seg, t_P, P_flat_sol, n_states), t_span_back, eta1, options);
+
+t_eta = flipud(t_eta);
+eta_sol = flipud(eta_sol);
+
+% Simulação Progressiva em Malha Fechada Completa (Planta + Obs Reduzido)
+disp('=> Iniciando simulação progressiva com realimentação por estimativa...');
+
+% Condições iniciais: planta desalinhada e observador no escuro
+x0_real = zeros(1, 5)';
+
+z0_inicial = build_z0(zeros(n_states - n_outputs, 1), x0_real);
+X0_global = [x0_real; z0_inicial]; % Vetor de estados combinados (5 reais + 3 do observador)
+
+% Executa a simulação temporal acoplada
+[t_sim, X_total] = ode45(@(t, X) forward_sim_rhs(t, X, A, B, C, E, F_red, G_red, H_red, S_red, N, Ri, t_P, P_flat_sol, t_eta, eta_sol, n_states), t_span_prog, X0_global, options);
+
+% Pós-Processamento e Reconstrução dos Sinais
+x_real = X_total(:, 1:n_states);
+z_obs  = X_total(:, n_states+1:end);
+
+x_hat = zeros(length(t_sim), n_states);
+u_seg = zeros(length(t_sim), n_inputs);
+y_ref = zeros(length(t_sim), n_outputs);
+
+for i = 1:length(t_sim)
+    t = t_sim(i);
+    y_atual = C * x_real(i, :)';
+    
+    % Reconstrução do estado estimado pelo observador reduzido
+    x_hat(i, :) = (S_red * y_atual + N * z_obs(i, :)')';
+    
+    % Recuperação das matrizes variantes no tempo por interpolação
+    P_flat = interp1(t_P, P_flat_sol, t, 'linear', 'extrap')';
+    P = reshape(P_flat, n_states, n_states);
+    eta = interp1(t_eta, eta_sol, t, 'linear', 'extrap')';
+    
+    % Ganhos variantes no tempo
+    K_t = Ri * B' * P;
+    u_til = Ri * B' * eta;
+    
+    % Lei de controle ótima: u(t) = -K(t)*x_hat(t) + u_til(t)
+    u_seg(i, :) = (-K_t * x_hat(i, :)' + u_til)';
+    
+    % Registra as referências de posição para o gráfico
+    ref_estado = daVinci_ref(t);
+    y_ref(i, :) = (C * ref_estado)';
+end
+
+% PLOTS DOS GRÁFICOS DE DESEMPENHO
+
+figure('Name', 'Seguidor LQ: Rastreamento de Trajetoria', 'Color', 'w');
+
+subplot(2,1,1);
+plot(t_sim, y_ref(:,1), 'r--', 'LineWidth', 1.5); hold on;
+plot(t_sim, x_real(:,1), 'b', 'LineWidth', 2); grid on;
+title('Rastreamento da Junta q2 (Elevacao) - Seguidor LQ Finito');
+ylabel('Posicao (rad)');
+legend('Referencia', 'Resposta Real', 'Location', 'best');
+
+subplot(2,1,2);
+plot(t_sim, y_ref(:,2), 'r--', 'LineWidth', 1.5); hold on;
+plot(t_sim, x_real(:,2), 'b', 'LineWidth', 2); grid on;
+title('Rastreamento da Junta q3 (Insercao) - Seguidor LQ Finito');
+xlabel('Tempo (s)'); ylabel('Posicao (m)');
+
+figure('Name', 'Seguidor LQ: Esforco de Controle dos Motores', 'Color', 'w');
+yyaxis left
+plot(t_sim, u_seg(:,1), 'b', 'LineWidth', 2); hold on;
+plot(t_sim, u_seg(:,2), 'r', 'LineWidth', 2);
+ylabel('Torque dos Motores (Nm)');
+set(gca, 'YColor', 'k');
+yyaxis right
+plot(t_sim, u_seg(:,3), 'g', 'LineWidth', 2); grid on;
+ylabel('Forca de Insercao (N)');
+set(gca, 'YColor', 'k');
+grid on;
+title('Esforco de Controle dos Motores no Rastreamento LQ');
+xlabel('Tempo (s)');
+legend('tau1 (Base)', 'tau2 (Elevacao)', 'F3 (Insercao)', 'Location', 'best');
+
+
+% ------ FUNÇÕES AUXILIARES DA DINÂMICA ------
+
+
+% Definição da Trajetória de Referência da Cirurgia
+function xr = daVinci_ref(t)
+    % Parâmetros da mesma curva exponencial suavizada
+    alpha_regime = 10;
+    q2_f = 5 * pi / 180; % Alvo de 5 graus (rad)
+    q3_f = 0.05;         % Alvo de 5 cm (m)
+
+    % Posições exponenciais: q(t) = q_f * (1 - e^(-alpha * t))
+    q2_r = q2_f * (1 - exp(-alpha_regime * t));
+    q3_r = q3_f * (1 - exp(-alpha_regime * t));
+
+    % Velocidades exponenciais (Derivadas): dq(t) = q_f * alpha * e^(-alpha * t)
+    dq2_r = q2_f * alpha_regime * exp(-alpha_regime * t);
+    dq3_r = q3_f * alpha_regime * exp(-alpha_regime * t);
+
+    % Montagem do vetor de estados de referência: [q2; q3; dq1; dq2; dq3]
+    xr = [q2_r; q3_r; 0; dq2_r; dq3_r]; 
+end
+
+% Lado Direito da EDO de Riccati (dP/dt)
+function dP_flat = riccati_rhs(~, P_flat, A, BRiBt, Q)
+    n = sqrt(length(P_flat));
+    P = reshape(P_flat, n, n);
+    dP = -P * A - A' * P + P * BRiBt * P - Q;
+    dP_flat = dP(:);
+end
+
+% Lado Direito da EDO do Co-Estado (deta/dt)
+function deta = eta_rhs(t, eta, A, BRiBt, Q, t_P, P_flat_sol, n_states)
+    P_flat = interp1(t_P, P_flat_sol, t, 'linear', 'extrap')';
+    P = reshape(P_flat, n_states, n_states);
+    deta = -(A' - P * BRiBt) * eta - Q * daVinci_ref(t);
+end
+
+% Dinâmica Acoplada Progressiva (Planta Real + Observador Reduzido)
+function dX = forward_sim_rhs(t, X, A, B, C, E, F_red, G_red, H_red, S_red, N, Ri, t_P, P_flat_sol, t_eta, eta_sol, n_states)
+    % Separa os estados
+    x = X(1:n_states);
+    z = X(n_states+1:end);
+    y = C * x;
+    
+    % Reconstrói x_hat
+    x_hat = S_red * y + N * z;
+    
+    % Interpola as matrizes de ganho da trajetória do LQT
+    P_flat = interp1(t_P, P_flat_sol, t, 'linear', 'extrap')';
+    P = reshape(P_flat, n_states, n_states);
+    eta = interp1(t_eta, eta_sol, t, 'linear', 'extrap')';
+    
+    % Calcula a lei de controle variantes no tempo
+    K_t = Ri * B' * P;
+    u_til = Ri * B' * eta;
+    u = -K_t * x_hat + u_til;
+    
+    % Perturbação respiratória ativa entra pela matriz E
+    w = 0.005 * sin(2 * pi * 0.5 * t);
+    
+    % Derivadas
+    dx = A * x + B * u + E * w;
+    dz = F_red * z + G_red * y + H_red * u;
+    
+    dX = [dx; dz];
+end
+
+
+
+%% ANÁLISE ESTATÍSTICA E POLOS DE MALHA FECHADA
+
+disp('==================================================');
+disp(' COMPILANDO RELATÓRIO ESTATÍSTICO DO SEGUIDOR... ');
+disp('==================================================');
+
+% 1. Extração dos Polos Assintóticos do Controlador (t = 0 / Regime Estacionário)
+P_flat_ss = P_flat_sol(1, :); 
+P_ss = reshape(P_flat_ss, n_states, n_states);
+K_ss = Ri * B'; 
+poles_cl_ss = eig(A - B * K_ss * P_ss);
+
+% Recuperação dos polos do observador reduzido
+poles_obs_red = eig(F_red);
+
+% 2. Cálculo das Métricas de Esforço de Controle
+max_u = max(abs(u_seg));
+mean_u = mean(abs(u_seg));
+rms_u = rms(u_seg);
+
+% 3. Cálculo dos Erros de Rastreamento em Regime (Apenas para t >= 0.5s)
+idx_regime = (t_sim >= 0.5);
+erro_q2 = y_ref(idx_regime, 1) - x_real(idx_regime, 1);
+erro_q3 = y_ref(idx_regime, 2) - x_real(idx_regime, 2);
+
+max_error_regime = [max(abs(erro_q2)), max(abs(erro_q3))];
+rms_error_regime = [rms(erro_q2), rms(erro_q3)];
+
+% --- IMPRESSÃO DOS RESULTADOS NO TERMINAL ---
+fprintf('\n===================================================================\n');
+fprintf('        TABELA DE POLOS ATUALIZADA (SINTONIA FINA) \n');
+fprintf('===================================================================\n');
+fprintf(' Modo |   Controlador (Assintotico)  |   Observador Reduzido   \n');
+fprintf('-------------------------------------------------------------------\n');
+for i = 1:5
+    str_ctrl = sprintf('%+6.2f %+6.2fi', real(poles_cl_ss(i)), imag(poles_cl_ss(i)));
+    if i <= 3
+        str_red = sprintf('%+6.2f %+6.2fi', real(poles_obs_red(i)), imag(poles_obs_red(i)));
+        fprintf('  %d   | %-28s | %-20s \n', i, str_ctrl, str_red);
+    else
+        fprintf('  %d   | %-28s | %-20s \n', i, str_ctrl, '         -         ');
+    end
+end
+fprintf('===================================================================\n');
+
+fprintf('\n===================================================================\n');
+fprintf('            MÉTRICAS DOS ATUADORES (ESFORÇO DE CONTROLE) \n');
+fprintf('===================================================================\n');
+fprintf(' Atuador       |   Valor Maximo   |   Valor Medio   |   Valor RMS     \n');
+fprintf('-------------------------------------------------------------------\n');
+fprintf(' tau1 (Base)   | %12.4f Nm | %11.4f Nm | %11.4f Nm \n', max_u(1), mean_u(1), rms_u(1));
+fprintf(' tau2 (Elev.)  | %12.4f Nm | %11.4f Nm | %11.4f Nm \n', max_u(2), mean_u(2), rms_u(2));
+fprintf(' F3 (Insercao) | %12.4f N  | %11.4f N  | %11.4f N  \n', max_u(3), mean_u(3), rms_u(3));
+fprintf('===================================================================\n');
+
+fprintf('\n===================================================================\n');
+fprintf('          ERROS DE RASTREAMENTO EM REGIME (t >= 0.5 s) \n');
+fprintf('===================================================================\n');
+fprintf(' Junta         |     Erro Maximo Absoluto    |       Erro RMS        \n');
+fprintf('-------------------------------------------------------------------\n');
+fprintf(' q2 (Elevacao) | %18.6f rad       | %16.6f rad  \n', max_error_regime(1), rms_error_regime(1));
+fprintf(' q3 (Insercao) | %18.6f m         | %16.6f m    \n', max_error_regime(2), rms_error_regime(2));
+fprintf('===================================================================\n\n');
+
+
+
+%% SEGUIDOR POR MODELO ASSUMIDO
+
+disp('==================================================');
+disp(' INICIANDO SEGUIDOR POR MODELO ASSUMIDO...        ');
+disp('==================================================');
+
+% Parâmetro de decaimento para estabilizar em 0.5s (5 / alpha = 0.5)
+alpha_regime = 10; 
+
+% Construção da Matriz Ar Autônoma (5x5)
+A_r = [ 0,  0,  0,   1,   0;   % d(q2_r)/dt = dq2_r
+        0,  0,  0,   0,   1;   % d(q3_r)/dt = dq3_r
+        0,  0,  0,   0,   0;   % d(dq1_r)/dt = 0
+        0,  0,  0, -alpha_regime,  0;   % d(dq2_r)/dt
+        0,  0,  0,   0, -alpha_regime]; % d(dq3_r)/dt
+
+% Matriz de seleção (saídas que devem seguir a referência)
+M = C; 
+
+% Cálculo do Ganho de Pré-alimentação Gr do Professor
+A_cl_inv = inv(A - B * K_lqr);
+N_ff = pinv(M * A_cl_inv * B) * M * A_cl_inv;
+G_r = N_ff * (A - A_r);
+
+% Montagem do Sistema Global de 13 Estados [x (5); z (3); x_r (5)]
+A_ex = [ (A - B * K_lqr * S_red * C),            (-B * K_lqr * N),         (B * (K_lqr - G_r));
+         (G_red * C - H_red * K_lqr * S_red * C), (F_red - H_red * K_lqr * N), (H_red * (K_lqr - G_r));
+         zeros(5, 5),                             zeros(5, 3),              A_r ];
+
+% Perturbação respiratória senoidal entra apenas na planta física
+E_ex = [ E; 
+         zeros(n_states - n_outputs, size(E, 2));
+         zeros(5, size(E, 2)) ];
+
+sys_ex = ss(A_ex, E_ex, eye(13), zeros(13, 1));
+
+% Configuração das Condições Iniciais do Vetor Global
+t_sim = 0 : 0.001 : 5; 
+
+% Planta real parte do repouso no zero
+x0_planta = [0; 0; 0; 0; 0]; 
+z0_inicial = build_z0(zeros(3, 1), x0_planta);
+
+% O gerador Ar nasce posicionado em 0, mas com a "velocidade de disparo" calculada
+v2_0 = alpha_regime * (5 * pi / 180); % Velocidade inicial para atingir 5 graus
+v3_0 = alpha_regime * 0.05;          % Velocidade inicial para atingir 5 cm
+x0_referencia = [0; 0; 0; v2_0; v3_0]; 
+
+% Vetor de estado inicial unificado (13 x 1)
+X0_global = [x0_planta; z0_inicial; x0_referencia];
+
+% Execução da Simulação (LQR + Obs + Gerador de Trajetória + Respiração)
+w_respiracao = 0.005 * sin(2 * pi * 0.5 * t_sim);
+[X_out, ~] = lsim(sys_ex, w_respiracao, t_sim, X0_global);
+
+% Extração dos Sinais para Análise
+q2_real = X_out(:, 1); q3_real = X_out(:, 2);
+q2_ref  = X_out(:, 9); q3_ref  = X_out(:, 10);
+
+u_seg = zeros(length(t_sim), n_inputs);
+for i = 1:length(t_sim)
+    xhat = S_red * C * X_out(i, 1:5)' + N * X_out(i, 6:8)';
+    xr   = X_out(i, 9:13)';
+    u_seg(i, :) = (-K_lqr * xhat + (K_lqr - G_r) * xr)';
+end
+
+% ----- PLOTS DOS GRÁFICOS DE DESEMPENHO -----
+figure('Name', 'Rastreamento por Gerador Exógeno Autônomo', 'Color', 'w');
+
+subplot(2,1,1);
+plot(t_sim, q2_ref, 'r--', 'LineWidth', 1.5); hold on;
+plot(t_sim, q2_real, 'b', 'LineWidth', 2); grid on;
+title('Rastreamento da Junta q2 (Elevacao) - Modelo Assumido');
+ylabel('Posicao (rad)');
+
+subplot(2,1,2);
+plot(t_sim, q3_ref, 'r--', 'LineWidth', 1.5); hold on;
+plot(t_sim, q3_real, 'b', 'LineWidth', 2); grid on;
+title('Rastreamento da Junta q3 (Insercao) - Modelo Assumido');
+xlabel('Tempo (s)'); ylabel('Posicao (m)');
+legend('Referencia da EDO', 'Resposta Real', 'Location', 'best');
+
+% --- GRÁFICO DE ESFORÇO ---
+figure('Name', 'Esforco de Controle (Modelo Estendido)', 'Color', 'w');
+yyaxis left
+plot(t_sim, u_seg(:,1), 'b', 'LineWidth', 2); hold on;
+plot(t_sim, u_seg(:,2), 'r', 'LineWidth', 2);
+ylabel('Torque dos Motores (Nm)'); set(gca, 'YColor', 'k');
+
+yyaxis right
+plot(t_sim, u_seg(:,3), 'g', 'LineWidth', 2);
+ylabel('Forca de Insercao (N)'); set(gca, 'YColor', 'k');
+grid on; xlabel('Tempo (s)');
+title('Esforco de Controle dos Motores (Abordagem de Duas Escalas)');
+legend('tau1 (Base)', 'tau2 (Elevacao)', 'F3 (Insercao)', 'Location', 'best');
