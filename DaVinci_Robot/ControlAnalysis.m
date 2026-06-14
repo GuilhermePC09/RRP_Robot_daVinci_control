@@ -1,12 +1,18 @@
 function ControlAnalysis(A, B, C, D)
-% ControlAnalysis Performs a comprehensive open-loop modern control analysis
+% ControlAnalysis - Performs a comprehensive open-loop modern control analysis
 %
-% Inputs: A, B, C, D - State-space numeric matrices
+% Inputs: A, B, C, D - State-space numeric matrices (5x5 reduced model configuration)
 
 n_states  = size(A, 1);
 n_inputs  = size(B, 2);
 n_outputs = size(C, 1);
 tol = 1e-8;
+
+% Define and create the destination folder structure for saving open-loop figures
+folder_path = fullfile('Figures', 'SystemAnalysis');
+if ~exist(folder_path, 'dir')
+    mkdir(folder_path);
+end
 
 % Instantiating the state-space system object internally to prevent mismatches
 sys_control = ss(A, B, C, D);
@@ -29,7 +35,6 @@ fprintf('---------------------------------------------------------\n');
 eig_A  = eig(A);
 re_eig = real(eig_A);
 poles_reduced = pole(sys_control);
-
 disp('Poles of the system:'); disp(poles_reduced);
 
 if all(re_eig < -tol)
@@ -54,8 +59,12 @@ if asym_stable
     end
 end
 
-figure('Name', 'Open-loop poles and zeros', 'Color', 'w');
+fig1 = figure('Name', 'Open-loop poles and zeros', 'Color', 'w');
 pzmap(sys_control); grid on;
+hold off;
+
+% Save Figure 1
+saveas(fig1, fullfile(folder_path, 'Open_Loop_Poles_Zeros.png'));
 
 %% 2) CONTROLLABILITY
 fprintf('---------------------------------------------------------\n');
@@ -91,6 +100,7 @@ fprintf('---------------------------------------------------------\n');
 [Abar_c, Bbar_c, Cbar_c, ~, k_c] = ctrbf(A, B, C);
 n_ctrb   = sum(k_c);
 n_unctrb = n_states - n_ctrb;
+
 fprintf('Controllable states  : %d\n',   n_ctrb);
 fprintf('Uncontrollable states: %d\n\n', n_unctrb);
 disp('Abar:'); disp(Abar_c);
@@ -160,6 +170,7 @@ fprintf('---------------------------------------------------------\n');
 [Abar_o, Bbar_o, Cbar_o, ~, k_o] = obsvf(A, B, C);
 n_obs   = sum(k_o);
 n_unobs = n_states - n_obs;
+
 fprintf('Observable states  : %d\n',   n_obs);
 fprintf('Unobservable states: %d\n\n', n_unobs);
 disp('Abar:'); disp(Abar_o);
@@ -200,39 +211,47 @@ fprintf('---------------------------------------------------------\n');
 fprintf(' 8) ADVANCED OPEN-LOOP ANALYSIS (MIMO FREQUENCY & ZEROS)\n');
 fprintf('---------------------------------------------------------\n');
 zeros_transmission = tzero(sys_control);
-fprintf('Zeros de Transmissao do Sistema MIMO:\n');
 
+fprintf('MIMO System Transmission Zeros:\n');
 if isempty(zeros_transmission)
-    fprintf('  Nenhum zero de transmissao encontrado.\n');
+    fprintf('  No transmission zeros found.\n');
     non_min_phase = false;
 else
     disp(zeros_transmission);
     if any(real(zeros_transmission) > tol)
         non_min_phase = true;
-        fprintf('=> SISTEMA DE FASE NAO-MINIMA (Zeros no semiplano direito detectados).\n\n');
+        fprintf('=> NON-MINIMUM PHASE SYSTEM (Right-half plane zeros detected).\n\n');
     else
         non_min_phase = false;
-        fprintf('=> SISTEMA DE FASE MINIMA (Todos os zeros no semiplano esquerdo).\n\n');
+        fprintf('=> MINIMUM PHASE SYSTEM (All zeros in the left-half plane).\n\n');
     end
 end
 
-fprintf('Gerando curvas de resposta em frequencia avancadas...\n');
+fprintf('Generating advanced frequency response curves...\n');
 
-% Analysis 2: MIMO Singular Values (Sigma Plot)
-figure('Name', 'Malha Aberta: Valores Singulares (Sigma)', 'Color', 'w');
+% MIMO Singular Values (Sigma Plot)
+fig2 = figure('Name', 'Open Loop: Singular Values (Sigma Plot)', 'Color', 'w');
 sigma(sys_control); grid on;
-title('Diagrama de Valores Singulares (Sigma) de Malha Aberta');
+title('Open-Loop Singular Values (Sigma) Diagram');
+hold off;
 
-% Analysis 4: Cross-Channel Bode Diagram (MIMO Bode)
-figure('Name', 'Malha Aberta: Diagrama de Bode MIMO', 'Color', 'w');
+% Save Figure 2
+saveas(fig2, fullfile(folder_path, 'Open_Loop_MIMO_Sigma.png'));
+
+% Cross-Channel Bode Diagram (MIMO Bode)
+fig3 = figure('Name', 'Open Loop: MIMO Bode Diagram', 'Color', 'w');
 bode(sys_control); grid on;
-title('Bode de Malha Aberta: Atuadores -> Juntas Medidas');
+title('Open-Loop Bode: Actuators -> Measured Joints');
+hold off;
 
-fprintf('=> Figuras de Sigma e Bode geradas com sucesso.\n\n');
+% Save Figure 3
+saveas(fig3, fullfile(folder_path, 'Open_Loop_MIMO_Bode.png'));
+
+fprintf('=> Sigma and Bode plots successfully generated and saved.\n\n');
 
 %% SUMMARY
 fprintf('=========================================================\n');
-fprintf(' SUMMARY\n');
+fprintf(' SUMMARY REPORT\n');
 fprintf('=========================================================\n');
 fprintf('  Asymptotically stable : %s\n',                         yesno(asym_stable));
 fprintf('  Controllable          : %s   (rank Mc = %d / %d)\n',  yesno(fully_controllable), rank_Mc, n_states);
@@ -243,7 +262,7 @@ fprintf('  Non-minimum phase     : %s\n',                         yesno(non_min_
 fprintf('=========================================================\n');
 end
 
-%% Helper
+%% Helper Function
 function s = yesno(cond)
     if cond, s = 'YES'; else, s = 'NO '; end
 end

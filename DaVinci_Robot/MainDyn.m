@@ -106,6 +106,12 @@ disp(E_num);
 % disp(eig(A_num));
 
 
+% EXPORTING MATRICES FOR MAIN CONTROL
+disp('Saving original matrices for control analysis...');
+save('DV_model.mat', 'A_num', 'B_num', 'C_num', 'D_num', 'E_num');
+disp('File "DV_model.mat" generated!');
+
+
 %% ----- Reduced system -----
 
 % Define the states we want to keep
