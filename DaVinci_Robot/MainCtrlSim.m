@@ -91,6 +91,10 @@ S_red = M + N * J;
 
 fprintf('Reduced observer poles:\n'); disp(eig(F_red));
 
+% Headless guard: skip the interactive GIF rendering when run in batch mode
+% (e.g. matlab -batch). Figures (saveas) still work without a desktop.
+RUN_HEADLESS = ~usejava('desktop');
+
 
 %% SIMULATION SCENARIOS LOOP
 
@@ -100,9 +104,9 @@ center_y   = 0;
 center_z   = -q3_bar_val; 
 a2_val     = 0.4;
 
-% Tracking performance cost function weights
-Q_seg = Q;
-R_seg = R;
+% Tracking performance cost function weights (LQR/Bryson weights, as in gen_track_figs.m)
+Q_seg = Q_lqr;
+R_seg = R_lqr;
 Q1    = 1 * Q_seg;
 t_f   = 5;
 
@@ -247,7 +251,19 @@ for scenario_id = ["A", "B", "C"]
         
         % Plots and Animations
         PlotSimControl(t_sim, vec_ref, q_ref, X_out1, X_out2, u_seg1, u_seg2, scenario_id, pert_id);
-        AnimSimControl(t_sim, X_out2, vec_ref, scenario_id, pert_id);
+        if ~RUN_HEADLESS
+            AnimSimControl(t_sim, X_out2, vec_ref, scenario_id, pert_id);
+        end
+
+        % --- Statistical report for the presentation tables (added) ---
+        % q2/q3 reference and real outputs for each tracking strategy.
+        y_ref_rep = q_ref(2:3, :)';
+        fprintf('\n################ SCENARIO %s | %s ################\n', ...
+                char(scenario_id), char(pert_id));
+        fprintf('---------------- Finite-Horizon LQT ----------------\n');
+        TrackingStatReport(poles_cl, eig(F_red), u_seg1, t_sim, y_ref_rep, X_out1(:, 2:3));
+        fprintf('---------------- Assumed Model ----------------\n');
+        TrackingStatReport(poles_cl, eig(F_red), u_seg2, t_sim, y_ref_rep, X_out2(:, 2:3));
     end
 end
 
